@@ -1,5 +1,5 @@
 // Заглушка бэкенда: те же пути и форматы, что в contracts.md, раздел 2, только в браузере.
-// Подключается из js/api.js, когда CONFIG.USE_MOCKS = true.
+// Подключается из js/api.js: в режиме mock на все запросы, в режиме auto — на маршруты, которых нет в бэкенде.
 import { handleMessage, undoByToken } from './assistant.js';
 import { NOW, TIMEZONE } from './clock.js';
 import { listItems, overdueItems, present, searchItems, undatedTasks, alive } from './queries.js';

@@ -4,7 +4,8 @@ import { TYPES, describeChanges, groupByDay, hasDate, statusLabel, whenLabel } f
 import { addDays, dayKey, dayTitle, formatDay } from './time.js';
 
 /**
- * handlers: onOption(option), onSuggestion(text), onUndo(token, button), onItem(item)
+ * handlers: onOption(option, flow), onSuggestion(text), onUndo(token, button), onItem(item),
+ * onFlowAnswer(flow, fields), onFlowCancel(flow)
  */
 export function createChat({ container, scroller, emptyState, handlers }) {
   let thinking = null;
@@ -18,6 +19,7 @@ export function createChat({ container, scroller, emptyState, handlers }) {
   // Кнопки старых вопросов больше не действуют: сервер уже ждёт ответа на последний
   function lockOptions() {
     for (const button of container.querySelectorAll('.option[data-kind="choice"]')) button.disabled = true;
+    for (const control of container.querySelectorAll('.flow-form input, .flow-form button')) control.disabled = true;
   }
 
   function addUser(text, { voice = false } = {}) {
@@ -29,11 +31,13 @@ export function createChat({ container, scroller, emptyState, handlers }) {
   }
 
   function addAssistant(response, { interactive = true, onRetry = null } = {}) {
+    lockOptions();
     const message = el('div', `msg msg--assistant msg--${response.type}`);
     message.append(el('div', 'bubble', response.reply || 'Готово.'));
 
     const body = renderBody(response);
     if (body) message.append(body);
+    if (response.flow && response.flow.status === 'awaiting_input') message.append(renderForm(response, interactive));
 
     const actions = el('div', 'options');
     for (const option of response.options || []) {
@@ -41,7 +45,7 @@ export function createChat({ container, scroller, emptyState, handlers }) {
       button.type = 'button';
       button.dataset.kind = 'choice';
       button.disabled = !interactive;
-      button.addEventListener('click', () => handlers.onOption(option));
+      button.addEventListener('click', () => handlers.onOption(option, response.flow));
       actions.append(button);
     }
     if (response.undo_token) {
@@ -91,6 +95,47 @@ export function createChat({ container, scroller, emptyState, handlers }) {
     hideThinking();
     container.replaceChildren();
     emptyState.hidden = false;
+  }
+
+  // ---------- Форма уточнения [бэкенд ждёт поля, а не текст] ----------
+
+  const FIELDS = {
+    time: [['time', 'Время', 'time']],
+    date: [['date', 'Дата', 'date']],
+    datetime: [['date', 'Дата', 'date'], ['time', 'Время', 'time']],
+    title: [['title', 'Что добавить', 'text']],
+  };
+
+  function renderForm(response, interactive) {
+    const flow = response.flow;
+    const expects = (response.data && response.data.expects) || 'time';
+    const form = el('form', 'flow-form');
+    for (const [name, label, type] of FIELDS[expects] || FIELDS.time) {
+      const field = el('label', 'flow-form__field');
+      field.append(el('span', null, label));
+      const input = el('input');
+      input.type = type;
+      input.name = name;
+      input.required = true;
+      input.disabled = !interactive;
+      if (name === 'date' && response.data && response.data.draft && response.data.draft.date_hint) input.value = response.data.draft.date_hint;
+      field.append(input);
+      form.append(field);
+    }
+    const submit = el('button', 'option', 'Ответить');
+    submit.type = 'submit';
+    submit.disabled = !interactive;
+    const cancel = el('button', 'option option--quiet', 'Отмена');
+    cancel.type = 'button';
+    cancel.disabled = !interactive;
+    cancel.addEventListener('click', () => handlers.onFlowCancel(flow));
+    form.append(submit, cancel);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const fields = Object.fromEntries(new FormData(form).entries());
+      handlers.onFlowAnswer(flow, fields);
+    });
+    return form;
   }
 
   // ---------- Тело ответа по типу ----------

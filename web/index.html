@@ -15,9 +15,12 @@
       </span>
       <span class="brand__name">Service name</span>
     </div>
-    <button class="profile" id="profile-btn" type="button" aria-label="Профиль" title="Гость">
-      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c0-4.2 3.6-6.5 8-6.5s8 2.3 8 6.5z"/></svg>
-    </button>
+    <div class="topbar__right">
+      <span class="source-badge" id="source-badge" hidden></span>
+      <button class="profile" id="profile-btn" type="button" aria-label="Профиль" title="Гость">
+        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c0-4.2 3.6-6.5 8-6.5s8 2.3 8 6.5z"/></svg>
+      </button>
+    </div>
   </header>
 
   <main class="layout">
@@ -37,8 +40,11 @@
 
     <section class="panel assistant" aria-label="Ассистент">
       <div class="panel__head">
-        <h2 class="panel__title">Ассистент</h2>
+        <h2 class="panel__title" id="assistant-name">Ассистент</h2>
         <div class="assistant__tools">
+          <button class="icon-btn" id="settings-btn" type="button" aria-label="Настройки ассистента" title="Имя и голос ассистента">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          </button>
           <label class="switch">
             <input type="checkbox" id="speak-toggle">
             <span class="switch__track" aria-hidden="true"></span>
@@ -90,5 +96,42 @@
   </main>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <dialog class="dialog" id="settings" aria-labelledby="settings-title">
+    <form method="dialog" id="settings-form">
+      <h2 class="dialog__title" id="settings-title">Настройки ассистента</h2>
+
+      <label class="field">
+        <span class="field__label">Имя</span>
+        <input id="settings-name" type="text" maxlength="30" autocomplete="off">
+        <span class="field__hint">По имени можно обращаться: «Джарвис, что у меня завтра?»</span>
+      </label>
+
+      <div class="field">
+        <span class="field__label" id="settings-gender-label">Голос</span>
+        <div class="choice" role="radiogroup" aria-label="Голос">
+          <label><input type="radio" name="gender" value="female"><span>Женский</span></label>
+          <label><input type="radio" name="gender" value="male"><span>Мужской</span></label>
+        </div>
+      </div>
+
+      <p class="field__hint" id="settings-note"></p>
+
+      <div class="dialog__actions">
+        <button class="btn-ghost" type="button" id="settings-preview">Прослушать</button>
+        <button class="btn-primary" type="submit">Готово</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    // С file:// браузер не загружает ES-модули, и страница выглядит живой, но ничего не делает
+    if (location.protocol === 'file:') {
+      const note = document.createElement('div');
+      note.className = 'file-warning';
+      note.textContent = 'Страница открыта как файл, поэтому скрипты и микрофон не работают. Запустите из корня проекта docker compose up -d --build --wait и откройте http://localhost:8080';
+      document.body.prepend(note);
+    }
+  </script>
 </body>
 </html>

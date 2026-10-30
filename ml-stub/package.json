@@ -1,0 +1,16 @@
+{
+  "name": "ml-stub",
+  "private": true,
+  "type": "module",
+  "description": "Заглушка ML-модуля: разбор фраз правилами через Redis Streams",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node worker.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "redis": "4.7.0"
+  }
+}

@@ -42,7 +42,9 @@ export function createPlanner({ body, tabs, onSelect, onToggleDone, onDelete }) 
         include_overdue: tab === 'upcoming' || tab === 'today' ? true : null,
       });
       if (seq !== requestSeq) return;
-      render((result && result.items) || [], (result && result.overdue) || [], fromKey, toKey);
+      // В планах только незакрытые записи [ФТ 8]: бэкенд отдаёт все статусы, а фильтр status у него один
+      const active = (list) => list.filter((item) => item.status === 'open' || item.status === 'scheduled');
+      render(active((result && result.items) || []), active((result && result.overdue) || []), fromKey, toKey);
     } catch (error) {
       console.warn('Не загрузили записи', error);
       if (seq === requestSeq) body.replaceChildren(el('p', 'planner__empty', 'Не удалось загрузить записи'));

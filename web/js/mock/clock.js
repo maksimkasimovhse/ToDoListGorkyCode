@@ -1,11 +1,23 @@
 // Часы заглушки: время заморожено на моменте из критериев приёмки [ФТ 16].
 // Пояс — Москва, +03:00 круглый год, поэтому даты считаются простой арифметикой.
+// ML-заглушка (ml-stub/) переводит часы на момент из задания бэкенда через setNow.
 
 export const TIMEZONE = 'Europe/Moscow';
-export const NOW = '2026-10-29T12:00:00+03:00';
+export let NOW = '2026-10-29T12:00:00+03:00';
 
-const OFFSET = '+03:00';
-const OFFSET_MS = 3 * 60 * 60 * 1000;
+let OFFSET = '+03:00';
+let OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** «Сейчас» и смещение пояса берутся из строки ISO: '2026-10-30T13:35:53.5627+03:00' */
+export function setNow(iso) {
+  const match = /([+-])(\d{2}):(\d{2})$/.exec(iso);
+  OFFSET = match ? match[0] : '+00:00';
+  OFFSET_MS = match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) * 60000 : 0;
+  // Go пишет наносекунды, Date.parse надёжно понимает только миллисекунды
+  const ms = Date.parse(iso.replace(/(\.\d{3})\d+/, '$1'));
+  if (Number.isNaN(ms)) throw new Error(`Неверное время: ${iso}`);
+  NOW = `${shifted(ms).slice(0, 19)}${OFFSET}`;
+}
 
 const WEEKDAYS = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
 const WEEKDAYS_ON = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
