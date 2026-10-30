@@ -1,5 +1,6 @@
 import * as api from './api.js';
 import { createChat } from './chat.js';
+import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
 import { createPlanner } from './planner.js';
 import { createRecent } from './recent.js';
@@ -30,6 +31,7 @@ const MIC_ERRORS = {
   unsupported: 'Этот браузер не поддерживает голосовой ввод. Напишите текстом или откройте страницу в Chrome.',
   denied: 'Нет доступа к микрофону. Разрешите доступ в настройках браузера или напишите текстом.',
   no_mic: 'Микрофон не найден. Подключите его или напишите текстом.',
+  network: 'Распознавание речи не отвечает: нужен интернет и Google Chrome (в Chromium оно не работает). Напишите текстом.',
   unavailable: 'Голосовой ввод сейчас не работает. Напишите текстом.',
 };
 
@@ -366,11 +368,46 @@ function beep() {
   }
 }
 
+// ---------- Источник данных: бэкенд или заглушка ----------
+
+const source = { backendAlive: null, mockRoutes: new Set() };
+
+api.apiEvents.addEventListener('fallback', ({ detail }) => {
+  if (detail.reason !== 'not_implemented') source.backendAlive = false;
+  if (source.mockRoutes.has(detail.route)) return;
+  source.mockRoutes.add(detail.route);
+  console.info(`[api] ${detail.route} → заглушка (${detail.reason})`);
+  renderSource();
+});
+
+function renderSource() {
+  const badge = $('source-badge');
+  const routes = [...source.mockRoutes].sort().join('\n');
+  let text = null;
+  let title = '';
+  if (CONFIG.MODE === 'mock') {
+    text = 'Заглушка';
+    title = 'CONFIG.MODE = mock: все ответы даёт js/mock/';
+  } else if (source.backendAlive === false) {
+    text = 'Бэкенд не отвечает';
+    title = CONFIG.MODE === 'auto' ? 'Ответы даёт заглушка js/mock/' : 'Запросы будут падать с ошибкой';
+  } else if (source.mockRoutes.size) {
+    text = `Бэкенд + заглушка (${source.mockRoutes.size})`;
+    title = `Этих маршрутов в бэкенде пока нет, их отвечает заглушка:\n${routes}`;
+  }
+  badge.hidden = !text;
+  badge.textContent = text || '';
+  badge.title = title;
+  badge.classList.toggle('is-offline', source.backendAlive === false);
+}
+
 // ---------- Старт ----------
 
 async function init() {
   syncSpeakToggle();
   setListening(false);
+  source.backendAlive = await api.checkHealth();
+  renderSource();
   try {
     const me = await api.getMe();
     configureClock(me);

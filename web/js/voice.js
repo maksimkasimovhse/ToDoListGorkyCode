@@ -46,10 +46,13 @@ export function createRecognizer({ onStart, onInterim, onResult, onEmpty, onErro
       onInterim(`${finalText}${interimText}`.trim());
     };
     recognition.onerror = (event) => {
+      console.warn('[voice] ошибка распознавания:', event.error, event.message || '');
       if (event.error === 'no-speech' || event.error === 'aborted') return;
       failed = true;
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') onError('denied');
       else if (event.error === 'audio-capture') onError('no_mic');
+      // Chrome распознаёт речь на серверах Google; в Chromium без ключей Google тоже приходит network
+      else if (event.error === 'network') onError('network');
       else onError('unavailable');
     };
     recognition.onend = () => {
