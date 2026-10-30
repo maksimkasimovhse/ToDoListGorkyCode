@@ -148,3 +148,28 @@ test('напомни про встречу — встреча с напомин�
   assert.equal(intent, 'create_meeting');
   assert.equal(params.remind_before_min, 15);
 });
+
+test('«создай напоминание …» — служебные слова не попадают в название', () => {
+  assert.equal(first('Создай напоминание чтобы сходить к бабушке завтра в 12').params.title, 'сходить к бабушке');
+  assert.equal(first('Создай напоминание на 16:33 съесть пирожное').params.title, 'съесть пирожное');
+});
+
+test('цель «я позвонил Ивану» ищется по основе слова, а не по всей фразе', () => {
+  const done = first('Я позвонил Ивану');
+  assert.equal(done.params.target.ref, 'filter');
+  // Имя точнее глагола: «позвон» подошло бы ко всем «позвонить …»
+  assert.equal(done.params.target.query, 'иван');
+  assert.equal(first('я позвонил').params.target.query, 'позвон');
+});
+
+test('основа слова сохраняет «ё» из исходной фразы', () => {
+  assert.equal(first('Отметь отчёт сделанным').params.target.query, 'отчё'); // «е» вместо «ё» не нашло бы «отчёт»
+});
+
+test('«верни смету в работу» — вернуть выполненную в работу', () => {
+  const { intent, params } = first('Верни смету в работу');
+  assert.equal(intent, 'complete');
+  assert.equal(params.done, false);
+  assert.equal(params.target.query, 'смет');
+  assert.equal(first('Верни в работу').params.done, false);
+});

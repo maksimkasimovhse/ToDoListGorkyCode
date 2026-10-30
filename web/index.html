@@ -3,23 +3,66 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Голосовой ассистент</title>
+  <title>Mara</title>
   <link rel="stylesheet" href="css/styles.css">
   <script type="module" src="js/app.js"></script>
 </head>
-<body>
+<body class="is-booting">
+  <section class="login" id="login" aria-labelledby="login-title" hidden>
+    <div class="login__brand">
+      <span class="brand__logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 9.5c1.2 4.2 7.8 4.2 10 0"/><path d="M12 4.5v3"/></svg>
+      </span>
+      <span class="brand__name">Mara</span>
+    </div>
+
+    <form class="login__card" novalidate>
+      <h1 class="login__title" id="login-title">Вход</h1>
+      <p class="login__note" role="status" hidden></p>
+
+      <label class="field">
+        <span class="field__label">Логин</span>
+        <input name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64">
+      </label>
+
+      <label class="field">
+        <span class="field__label">Пароль</span>
+        <span class="login__password">
+          <input name="password" type="password" autocomplete="current-password" maxlength="1024">
+          <button class="login__eye" type="button" aria-label="Показать пароль" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </span>
+      </label>
+
+      <p class="login__error" role="alert"></p>
+      <button class="btn-primary login__submit" type="submit">Войти</button>
+    </form>
+
+    <div class="login__demo">
+      <span class="login__demo-label">Тестовые пользователи</span>
+      <div class="login__demo-buttons"></div>
+    </div>
+  </section>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand__logo" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 9.5c1.2 4.2 7.8 4.2 10 0"/><path d="M12 4.5v3"/></svg>
       </span>
-      <span class="brand__name">Service name</span>
+      <span class="brand__name">Mara</span>
     </div>
     <div class="topbar__right">
       <span class="source-badge" id="source-badge" hidden></span>
-      <button class="profile" id="profile-btn" type="button" aria-label="Профиль" title="Гость">
-        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c0-4.2 3.6-6.5 8-6.5s8 2.3 8 6.5z"/></svg>
-      </button>
+      <div class="profile-wrap">
+        <button class="profile" id="profile-btn" type="button" aria-label="Профиль" aria-haspopup="menu" aria-expanded="false" title="Профиль">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c0-4.2 3.6-6.5 8-6.5s8 2.3 8 6.5z"/></svg>
+        </button>
+        <div class="menu" id="profile-menu" role="menu" hidden>
+          <div class="menu__name" id="profile-name"></div>
+          <button class="menu__item" id="logout-btn" type="button" role="menuitem">Выйти</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -84,7 +127,12 @@
     </section>
 
     <aside class="panel planner" aria-label="Мои записи">
-      <h2 class="panel__title">Мои записи</h2>
+      <div class="planner__head">
+        <h2 class="panel__title">Мои записи</h2>
+        <button class="add-btn" id="add-item" type="button" aria-label="Добавить запись" title="Добавить запись">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
       <div class="tabs" id="planner-tabs" role="tablist">
         <button class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="upcoming">Ближайшие</button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="today">Сегодня</button>
@@ -120,6 +168,60 @@
       <div class="dialog__actions">
         <button class="btn-ghost" type="button" id="settings-preview">Прослушать</button>
         <button class="btn-primary" type="submit">Готово</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="item-dialog" aria-labelledby="item-dialog-title">
+    <form class="item-form" novalidate>
+      <button class="dialog__close" type="button" data-action="cancel" aria-label="Закрыть" title="Закрыть">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <h2 class="dialog__title" id="item-dialog-title">Новая запись</h2>
+
+      <div class="choice choice--types" role="radiogroup" aria-label="Тип записи">
+        <label><input type="radio" name="type" value="task" checked><span><i class="dot dot--task"></i>Задача</span></label>
+        <label><input type="radio" name="type" value="reminder"><span><i class="dot dot--reminder"></i>Напоминание</span></label>
+        <label><input type="radio" name="type" value="meeting"><span><i class="dot dot--meeting"></i>Встреча</span></label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">Что нужно сделать</span>
+        <input name="title" type="text" maxlength="200" autocomplete="off">
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span class="field__label">Дата</span>
+          <input name="date" type="date">
+        </label>
+        <label class="field">
+          <span class="field__label">Время</span>
+          <input name="time" type="time">
+        </label>
+      </div>
+
+      <label class="field" data-for="meeting" hidden>
+        <span class="field__label">Длительность</span>
+        <select name="duration">
+          <option value="30">30 минут</option>
+          <option value="60" selected>1 час</option>
+          <option value="90">1,5 часа</option>
+          <option value="120">2 часа</option>
+          <option value="180">3 часа</option>
+        </select>
+      </label>
+
+      <p class="field__hint item-form__hint"></p>
+      <div class="item-form__conflict" role="alert" hidden></div>
+      <p class="item-form__error" role="alert"></p>
+
+      <div class="dialog__actions item-form__actions">
+        <div class="item-form__extra" hidden>
+          <button class="btn-ghost btn-ghost--danger" type="button" data-action="delete">Удалить</button>
+          <button class="btn-ghost" type="button" data-action="toggle-done">Выполнено</button>
+        </div>
+        <button class="btn-primary" type="submit">Добавить</button>
       </div>
     </form>
   </dialog>
