@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -159,4 +161,70 @@ func present(item domain.Item, timezone string, now time.Time) domain.Item {
 		}
 	}
 	return item
+}
+
+// Update изменяет только переданные поля; null очищает необязательное поле.
+func (s *Items) Update(ctx context.Context, user, id string, patch map[string]json.RawMessage) (domain.Item, error) {
+	if len(patch) == 0 {
+		return domain.Item{}, invalid("нужен непустой объект изменений")
+	}
+	item, err := s.Get(ctx, user, id)
+	if err != nil {
+		return domain.Item{}, err
+	}
+	version := item.UpdatedAt
+	fields := map[string]any{
+		"title": &item.Title, "source_text": &item.SourceText,
+		"due_date": &item.DueDate, "due_at": &item.DueAt,
+		"period_start": &item.PeriodStart, "period_end": &item.PeriodEnd,
+		"start_at": &item.StartAt, "end_at": &item.EndAt,
+		"all_day": &item.AllDay, "participants": &item.Participants,
+		"location": &item.Location, "remind_at": &item.RemindAt, "status": &item.Status,
+	}
+	for key, raw := range patch {
+		target, ok := fields[key]
+		if !ok {
+			return domain.Item{}, invalid("поле нельзя изменять: " + key)
+		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			switch key {
+			case "title", "source_text", "all_day", "status":
+				return domain.Item{}, invalid("поле не может быть null: " + key)
+			}
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return domain.Item{}, invalid("неверное поле: " + key)
+		}
+	}
+	item.Title = strings.TrimSpace(item.Title)
+	if item.Type == domain.ItemMeeting {
+		if item.Status != domain.StatusScheduled && item.Status != domain.StatusCancelled {
+			return domain.Item{}, invalid("статус встречи: scheduled или cancelled")
+		}
+	} else if item.Status != domain.StatusOpen && item.Status != domain.StatusDone {
+		return domain.Item{}, invalid("статус задачи или напоминания: open или done")
+	}
+	if item.Status == domain.StatusDone {
+		if item.CompletedAt == nil {
+			now := time.Now().UTC()
+			item.CompletedAt = &now
+		}
+	} else {
+		item.CompletedAt = nil
+	}
+	if err := ValidateItem(item); err != nil {
+		return domain.Item{}, err
+	}
+	saved, err := s.repo.Update(ctx, item, version)
+	if err != nil {
+		return domain.Item{}, err
+	}
+	return present(saved, "Europe/Moscow", time.Now()), nil
+}
+
+func (s *Items) Delete(ctx context.Context, user, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return invalid("неверный id")
+	}
+	return s.repo.Delete(ctx, user, id)
 }
