@@ -11,7 +11,9 @@ import (
 
 	"gorky/backend/internal/config"
 	"gorky/backend/internal/migration"
+	"gorky/backend/internal/queue"
 	"gorky/backend/internal/repository/postgres"
+	"gorky/backend/internal/service"
 	httptransport "gorky/backend/internal/transport/http"
 )
 
@@ -27,7 +29,6 @@ func New(cfg config.Config, logger *slog.Logger) *App {
 		logger: logger,
 		server: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httptransport.NewRouter(),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       15 * time.Second,
 			WriteTimeout:      30 * time.Second,
@@ -60,6 +61,20 @@ func (a *App) Run(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	redisCtx, cancelRedis := context.WithTimeout(ctx, a.cfg.DatabaseTimeout)
+	bus, err := queue.Open(redisCtx, a.cfg.RedisURL, a.cfg.MLRequestStream, a.cfg.MLResultStream, a.cfg.MLResultGroup)
+	cancelRedis()
+	if err != nil {
+		return fmt.Errorf("initialize Redis: %w", err)
+	}
+	defer bus.Close()
+	store := postgres.NewMessages(db)
+	messages := service.NewMessages(store, a.cfg.MessageTimeout)
+	items := service.NewItems(postgres.NewItems(db))
+	a.server.Handler = httptransport.NewRouter(messages, items)
+	workerCtx, cancelWorkers := context.WithCancel(ctx)
+	waitWorkers := bus.Start(workerCtx, store, messages.HandleResult, a.logger)
+	defer func() { cancelWorkers(); waitWorkers() }()
 
 	serverErr := make(chan error, 1)
 	go func() {

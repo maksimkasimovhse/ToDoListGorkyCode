@@ -26,26 +26,32 @@ type Date string
 
 // Item — начальная модель записи. Повторы будут добавлены вместе с соответствующими сценариями.
 // У задачи может быть не больше одного варианта срока: DueDate, DueAt или период.
-// DTO запросов и ответов HTTP следует определять отдельно в транспортном слое.
+// Входные DTO определяются отдельно; JSON-теги задают представление записи в ответах.
 type Item struct {
-	ID           string
-	UserID       string
-	Type         ItemType
-	Title        string
-	SourceText   string
-	DueDate      *Date
-	DueAt        *time.Time
-	PeriodStart  *time.Time
-	PeriodEnd    *time.Time
-	StartAt      *time.Time
-	EndAt        *time.Time
-	AllDay       bool
-	Participants []string
-	Location     *string
-	RemindAt     *time.Time
-	Status       ItemStatus
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	CompletedAt  *time.Time
-	DeletedAt    *time.Time
+	ID           string       `json:"id"`
+	UserID       string       `json:"user_id"`
+	Type         ItemType     `json:"type"`
+	Title        string       `json:"title"`
+	SourceText   string       `json:"source_text"`
+	DueDate      *Date        `json:"due_date"`
+	DueAt        *time.Time   `json:"due_at"`
+	PeriodStart  *time.Time   `json:"period_start"`
+	PeriodEnd    *time.Time   `json:"period_end"`
+	StartAt      *time.Time   `json:"start_at"`
+	EndAt        *time.Time   `json:"end_at"`
+	AllDay       bool         `json:"all_day"`
+	Participants []string     `json:"participants"`
+	Location     *string      `json:"location"`
+	RemindAt     *time.Time   `json:"remind_at"`
+	Status       ItemStatus   `json:"status"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	CompletedAt  *time.Time   `json:"completed_at"`
+	DeletedAt    *time.Time   `json:"deleted_at"`
+	Computed     ItemComputed `json:"computed"`
+}
+
+type ItemComputed struct {
+	Overdue    bool `json:"overdue"`
+	Occurrence any  `json:"occurrence"`
 }

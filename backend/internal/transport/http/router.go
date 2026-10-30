@@ -5,11 +5,23 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"gorky/backend/internal/service"
 )
 
-func NewRouter() http.Handler {
+func NewRouter(messages *service.Messages, items *service.Items) http.Handler {
 	router := chi.NewRouter()
 	router.Get("/healthz", health)
+	handler := &Handler{messages: messages, items: items}
+	router.Post("/api/message", handler.submit)
+	router.Get("/api/messages/{id}", handler.poll)
+	router.Post("/api/messages/{id}/answer", handler.answer)
+	router.Post("/api/messages/{id}/cancel", handler.cancel)
+	router.Get("/api/history", handler.history)
+	router.Post("/api/items", handler.createItem)
+	router.Get("/api/items", handler.listItems)
+	router.Get("/api/items/undated", handler.listItems)
+	router.Get("/api/items/search", handler.listItems)
+	router.Get("/api/items/{id}", handler.getItem)
 	return router
 }
 
