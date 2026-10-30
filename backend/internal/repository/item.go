@@ -16,6 +16,8 @@ var ErrNotFound = errors.New("item not found")
 // ItemRepository всегда ограничивает доступ по userID, включая операции записи.
 // Удалённые записи исключаются. Для чужих идентификаторов возвращается ErrNotFound.
 type ItemRepository interface {
+	WithUserLock(context.Context, string, func(ItemRepository) error) error
+	MeetingConflicts(context.Context, domain.Item) ([]domain.Item, error)
 	Update(context.Context, domain.Item, time.Time) (domain.Item, error)
 	Delete(context.Context, string, string) error
 	Create(ctx context.Context, item domain.Item) (domain.Item, error)
