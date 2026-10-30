@@ -1,0 +1,21 @@
+# ML-заглушка рядом с Redis из backend/compose.yaml. Сначала поднимите его: cd backend && docker compose up -d redis
+services:
+  ml-stub:
+    image: node:22-alpine
+    restart: unless-stopped
+    # Исходники только для чтения: контейнер копирует их к себе и ставит зависимости внутри,
+    # в репозиторий ничего не пишется. Правила берутся из web/js/mock
+    volumes:
+      - .:/src/ml-stub:ro
+      - ../web/js/mock:/src/web/js/mock:ro
+    command: sh -c "cp -r /src /app && cd /app/ml-stub && rm -rf node_modules && npm ci --no-audit --no-fund && exec node worker.mjs"
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    networks:
+      - backend
+
+networks:
+  # Сеть, которую создаёт docker compose в папке backend
+  backend:
+    external: true
+    name: ${BACKEND_NETWORK:-backend_default}
