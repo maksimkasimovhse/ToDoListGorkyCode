@@ -16,7 +16,7 @@ type Config struct {
 	MigrationsDir    string
 }
 
-// Load reads environment variables. A .env file is not loaded automatically.
+// Load читает переменные окружения. Файл .env автоматически не загружается.
 func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,

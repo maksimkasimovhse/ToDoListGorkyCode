@@ -1,4 +1,4 @@
-// Package domain contains business entities independent of transport and storage.
+// Пакет domain содержит сущности предметной области, независимые от транспорта и хранилища.
 package domain
 
 import "time"
@@ -20,13 +20,13 @@ const (
 	StatusCancelled ItemStatus = "cancelled"
 )
 
-// Date is a calendar date in YYYY-MM-DD form, without a timezone or time of day.
-// Validation belongs in the use case before persisting an item.
+// Date — календарная дата в формате YYYY-MM-DD, без часового пояса и времени суток.
+// Проверка выполняется в бизнес-сценарии перед сохранением записи.
 type Date string
 
-// Item is the initial domain model. Recurrence will be added with its use cases.
-// A task may have at most one deadline variant: DueDate, DueAt, or a period.
-// HTTP request/response DTOs should be defined separately in the transport layer.
+// Item — начальная модель записи. Повторы будут добавлены вместе с соответствующими сценариями.
+// У задачи может быть не больше одного варианта срока: DueDate, DueAt или период.
+// DTO запросов и ответов HTTP следует определять отдельно в транспортном слое.
 type Item struct {
 	ID           string
 	UserID       string

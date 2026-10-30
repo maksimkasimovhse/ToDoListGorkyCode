@@ -1,4 +1,4 @@
-// Package repository defines storage contracts; implementations live in subpackages.
+// Пакет repository определяет контракты хранилища; реализации находятся во вложенных пакетах.
 package repository
 
 import (
@@ -11,8 +11,8 @@ import (
 
 var ErrNotFound = errors.New("item not found")
 
-// ItemRepository always scopes access by userID, including writes.
-// Deleted items are excluded. Foreign IDs must return ErrNotFound.
+// ItemRepository всегда ограничивает доступ по userID, включая операции записи.
+// Удалённые записи исключаются. Для чужих идентификаторов возвращается ErrNotFound.
 type ItemRepository interface {
 	Create(ctx context.Context, item domain.Item) (domain.Item, error)
 	GetByID(ctx context.Context, userID, itemID string) (domain.Item, error)
@@ -20,7 +20,7 @@ type ItemRepository interface {
 }
 
 type ItemFilter struct {
-	// From is inclusive; To is exclusive. Nil means no bound.
+	// Граница From включается, To не включается. nil означает отсутствие границы.
 	From   *time.Time
 	To     *time.Time
 	Types  []domain.ItemType

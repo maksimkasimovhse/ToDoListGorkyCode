@@ -1,4 +1,4 @@
-// Package postgres implements PostgreSQL connectivity and storage.
+// Пакет postgres реализует подключение к PostgreSQL и хранение данных.
 package postgres
 
 import (
@@ -11,11 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// Open returns a connection pool only after a successful database ping.
+// Open возвращает пул соединений только после успешной проверки подключения к БД.
 func Open(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	cfg, err := pgx.ParseConfig(databaseURL)
 	if err != nil {
-		// The driver's parse error can contain credentials from the input URL.
+		// Ошибка разбора драйвера может содержать учётные данные из исходного URL.
 		return nil, fmt.Errorf("invalid DATABASE_URL")
 	}
 	cfg.RuntimeParams["timezone"] = "UTC"
