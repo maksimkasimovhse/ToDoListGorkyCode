@@ -129,7 +129,7 @@
     if (location.protocol === 'file:') {
       const note = document.createElement('div');
       note.className = 'file-warning';
-      note.textContent = 'Страница открыта как файл, поэтому скрипты и микрофон не работают. Запустите бэкенд (backend/README.md) и откройте http://localhost:8080';
+      note.textContent = 'Страница открыта как файл, поэтому скрипты и микрофон не работают. Запустите из корня проекта docker compose up -d --build --wait и откройте http://localhost:8080';
       document.body.prepend(note);
     }
   </script>
