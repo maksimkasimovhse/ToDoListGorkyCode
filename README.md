@@ -10,6 +10,7 @@ backend/               Go-сервер: API, раздача фронта и би
   Dockerfile           образ приложения с файлами web/
 web/                   HTML, CSS и JavaScript
 ml-stub/               временная ML-заглушка (Node.js): разбор фраз правилами через Redis
+telegram-bot/          Telegram-бот (Node.js): второй клиент того же API
 compose.yaml           приложение, PostgreSQL и Redis
 .env.example           настройки общего запуска
 .dockerignore          исключения общего контекста сборки
@@ -57,6 +58,18 @@ docker compose up -d
 
 Примеры фраз: «Напомни завтра в 10 утра позвонить Ивану», «Поставь встречу с Иваном завтра»
 (ассистент спросит время), «Что у меня завтра?», «Найди задачу про билеты».
+
+## Telegram-бот
+
+С ассистентом можно говорить и в Telegram: тот же API, те же записи, уточнения с кнопками и уведомления
+за 15 минут до встреч и напоминаний. Бот — отдельный сервис, бэкенд о нём не знает: [telegram-bot](telegram-bot/README.md).
+
+После приложения и ML-заглушки, с токеном от @BotFather в `telegram-bot/.env`:
+
+```powershell
+cd telegram-bot
+docker compose up -d
+```
 
 ## Если не работает
 

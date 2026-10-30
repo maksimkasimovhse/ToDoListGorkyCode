@@ -1,17 +1,13 @@
 // Уведомления браузера: за 15 минут до напоминания или встречи и в момент начала.
 // Работают, пока страница открыта (хотя бы в фоновой вкладке): пушей с сервера пока нет.
-import { plural } from './dom.js';
-import { formatTime, now } from './time.js';
+import { LATE_MS, describe, dueNotice } from './schedule.js';
+import { now } from './time.js';
 
 const KEY = 'notifications_enabled';
 const FIRED_KEY = 'notifications_fired';
-const SOON_MS = 15 * 60 * 1000;
-// Момент начала ещё показываем, если вкладка проснулась с опозданием до двух минут
-const LATE_MS = 2 * 60 * 1000;
 const CHECK_MS = 15 * 1000;
 const RELOAD_MS = 5 * 60 * 1000;
 const LOOKAHEAD_MS = 2 * 60 * 60 * 1000;
-const MINUTES = ['минуту', 'минуты', 'минут'];
 
 export const notificationsSupported = 'Notification' in window && window.isSecureContext;
 
@@ -31,26 +27,6 @@ const storage = {
     }
   },
 };
-
-/** Момент события: время напоминания или начало встречи. Встречи на весь день не уведомляют */
-function momentOf(item) {
-  if (item.type === 'reminder' && item.status === 'open' && item.remind_at) return Date.parse(item.remind_at);
-  if (item.type === 'meeting' && item.status === 'scheduled' && item.start_at && !item.all_day) return Date.parse(item.start_at);
-  return null;
-}
-
-function describe(item, kind, at) {
-  const time = formatTime(new Date(at));
-  const range = item.type === 'meeting' && item.end_at ? `${time}–${formatTime(item.end_at)}` : time;
-  const place = item.location ? ` · ${item.location}` : '';
-  if (kind === 'soon') {
-    const minutes = Math.max(1, Math.round((at - now().getTime()) / 60000));
-    const what = item.type === 'meeting' ? 'Встреча' : 'Напоминание';
-    return { title: `Через ${minutes} ${plural(minutes, MINUTES)}: ${item.title}`, body: `${what} в ${range}${place}` };
-  }
-  if (item.type === 'meeting') return { title: `Начинается встреча: ${item.title}`, body: `${range}${place}` };
-  return { title: `Напоминаю: ${item.title}`, body: `Напоминание на ${time}` };
-}
 
 /**
  * loadItems() — ближайшие записи; onDue(item, kind, text) — вызывается в момент срабатывания,
@@ -103,7 +79,7 @@ export function createNotifier({ loadItems, onDue, toggle, note }) {
   });
 
   function show(item, kind, at) {
-    const text = describe(item, kind, at);
+    const text = describe(item, kind, at, now().getTime());
     let shown = false;
     if (enabled()) {
       try {
@@ -126,18 +102,10 @@ export function createNotifier({ loadItems, onDue, toggle, note }) {
   function check() {
     const current = now().getTime();
     for (const item of items) {
-      const at = momentOf(item);
-      if (at == null) continue;
-      const left = at - current;
-      let kind = null;
-      // Меньше минуты до начала — «скоро» уже не нужно, сработает момент начала
-      if (left > 60 * 1000 && left <= SOON_MS) kind = 'soon';
-      else if (left <= 0 && left > -LATE_MS) kind = 'now';
-      if (!kind) continue;
-      const key = `${item.id}:${kind}:${at}`;
-      if (fired.has(key)) continue;
-      remember(key);
-      show(item, kind, at);
+      const notice = dueNotice(item, current);
+      if (!notice || fired.has(notice.key)) continue;
+      remember(notice.key);
+      show(item, notice.kind, notice.at);
     }
   }
 
