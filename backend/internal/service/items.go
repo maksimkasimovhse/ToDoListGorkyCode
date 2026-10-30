@@ -67,6 +67,20 @@ type Items struct{ repo repository.ItemRepository }
 func NewItems(repo repository.ItemRepository) *Items { return &Items{repo: repo} }
 
 func (s *Items) Create(ctx context.Context, user string, item domain.Item) (domain.Item, error) {
+	return s.CreateWithOptions(ctx, user, item, SaveOptions{})
+}
+
+func (s *Items) CreateWithOptions(ctx context.Context, user string, item domain.Item, options SaveOptions) (domain.Item, error) {
+	var saved domain.Item
+	err := s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error {
+		var err error
+		saved, err = NewItems(repo).create(ctx, user, item, options)
+		return err
+	})
+	return saved, err
+}
+
+func (s *Items) create(ctx context.Context, user string, item domain.Item, options SaveOptions) (domain.Item, error) {
 	item.ID = ""
 	item.UserID = user
 	item.CompletedAt = nil
@@ -81,6 +95,9 @@ func (s *Items) Create(ctx context.Context, user string, item domain.Item) (doma
 		item.EndAt = &end
 	}
 	if err := ValidateItem(item); err != nil {
+		return domain.Item{}, err
+	}
+	if err := s.checkMeeting(ctx, item, options.AllowConflicts); err != nil {
 		return domain.Item{}, err
 	}
 	saved, err := s.repo.Create(ctx, item)
@@ -165,6 +182,16 @@ func present(item domain.Item, timezone string, now time.Time) domain.Item {
 
 // Update изменяет только переданные поля; null очищает необязательное поле.
 func (s *Items) Update(ctx context.Context, user, id string, patch map[string]json.RawMessage) (domain.Item, error) {
+	var saved domain.Item
+	err := s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error {
+		var err error
+		saved, err = NewItems(repo).update(ctx, user, id, patch)
+		return err
+	})
+	return saved, err
+}
+
+func (s *Items) update(ctx context.Context, user, id string, patch map[string]json.RawMessage) (domain.Item, error) {
 	if len(patch) == 0 {
 		return domain.Item{}, invalid("нужен непустой объект изменений")
 	}
@@ -173,6 +200,16 @@ func (s *Items) Update(ctx context.Context, user, id string, patch map[string]js
 		return domain.Item{}, err
 	}
 	version := item.UpdatedAt
+	original := item
+	if item.StartAt != nil {
+		at := *item.StartAt
+		original.StartAt = &at
+	}
+	if item.EndAt != nil {
+		at := *item.EndAt
+		original.EndAt = &at
+	}
+	allow := false
 	fields := map[string]any{
 		"title": &item.Title, "source_text": &item.SourceText,
 		"due_date": &item.DueDate, "due_at": &item.DueAt,
@@ -182,6 +219,12 @@ func (s *Items) Update(ctx context.Context, user, id string, patch map[string]js
 		"location": &item.Location, "remind_at": &item.RemindAt, "status": &item.Status,
 	}
 	for key, raw := range patch {
+		if key == "allow_conflicts" {
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &allow) != nil {
+				return domain.Item{}, invalid("allow_conflicts должен быть boolean")
+			}
+			continue
+		}
 		target, ok := fields[key]
 		if !ok {
 			return domain.Item{}, invalid("поле нельзя изменять: " + key)
@@ -215,6 +258,15 @@ func (s *Items) Update(ctx context.Context, user, id string, patch map[string]js
 	if err := ValidateItem(item); err != nil {
 		return domain.Item{}, err
 	}
+	// Уже подтверждённое пересечение не мешает правке названия; перенос и восстановление проверяются заново.
+	scheduleChanged := original.Status != item.Status ||
+		(item.StartAt != nil && original.StartAt != nil && !item.StartAt.Equal(*original.StartAt)) ||
+		(item.EndAt != nil && original.EndAt != nil && !item.EndAt.Equal(*original.EndAt))
+	if scheduleChanged {
+		if err := s.checkMeeting(ctx, item, allow); err != nil {
+			return domain.Item{}, err
+		}
+	}
 	saved, err := s.repo.Update(ctx, item, version)
 	if err != nil {
 		return domain.Item{}, err
@@ -226,5 +278,5 @@ func (s *Items) Delete(ctx context.Context, user, id string) error {
 	if _, err := uuid.Parse(id); err != nil {
 		return invalid("неверный id")
 	}
-	return s.repo.Delete(ctx, user, id)
+	return s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error { return repo.Delete(ctx, user, id) })
 }

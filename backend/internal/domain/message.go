@@ -79,6 +79,9 @@ type Turn struct {
 }
 
 type Draft struct {
+	ConflictActionIndex int      `json:"conflict_action_index,omitempty"`
+	RescheduleIndex     *int     `json:"reschedule_index,omitempty"`
+	ConflictKeys        []string `json:"conflict_keys,omitempty"`
 	Action
 	SourceText     string    `json:"source_text"`
 	PendingActions []Action  `json:"pending_actions,omitempty"`

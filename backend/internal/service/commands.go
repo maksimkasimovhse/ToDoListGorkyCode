@@ -37,6 +37,18 @@ type params struct {
 }
 
 func execute(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
+	var reply domain.Reply
+	var next domain.DialogueState
+	err := repo.WithUserLock(ctx, m.UserID, func(locked repository.ItemRepository) error {
+		var err error
+		reply, next, err = executeLocked(ctx, locked, m, state, result)
+		return err
+	})
+	return reply, next, err
+}
+
+func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
+	var approvedConflicts []string
 	confirmed := false
 	progress := false
 	if result.Status == "not_understood" {
@@ -56,7 +68,7 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 			return domain.NewReply("info", "Нет незавершённого действия. Скажите запрос полностью.", map[string]any{"reason": "draft_dropped"}), state, nil
 		}
 		m.ModelRequest.Text = state.Draft.SourceText
-		if len(state.Draft.PendingActions) > 0 {
+		if len(state.Draft.PendingActions) > 0 && state.Draft.RescheduleIndex == nil {
 			var p params
 			if json.Unmarshal(result.Actions[0].Params, &p) != nil {
 				return clarifyAgain(state)
@@ -80,6 +92,9 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 				return clarifyAgain(state)
 			}
 			if allowedNo[text] {
+				if len(state.Draft.ConflictKeys) > 0 && text != "отмена" {
+					return rescheduleConflict(state, m)
+				}
 				state.Draft = nil
 				state.Expects = nil
 				return domain.NewReply("info", "Хорошо, не добавляю.", map[string]any{"reason": "cancelled"}), state, nil
@@ -87,6 +102,7 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 			result.Actions = state.Draft.PendingActions
 			result.Status = "ready"
 			confirmed = true
+			approvedConflicts = state.Draft.ConflictKeys
 		} else {
 			var p params
 			if err := json.Unmarshal(result.Actions[0].Params, &p); err != nil {
@@ -104,7 +120,16 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 				progress = true
 			}
 			raw, _ := json.Marshal(original)
-			result.Actions = []domain.Action{{Intent: state.Draft.Action.Intent, Params: raw}}
+			updated := domain.Action{Intent: state.Draft.Action.Intent, Params: raw}
+			result.Actions = []domain.Action{updated}
+			if state.Draft.RescheduleIndex != nil {
+				index := *state.Draft.RescheduleIndex
+				if index < 0 || index >= len(state.Draft.PendingActions) {
+					return domain.Reply{}, state, invalid("неверный черновик переноса")
+				}
+				result.Actions = append([]domain.Action(nil), state.Draft.PendingActions...)
+				result.Actions[index] = updated
+			}
 			result.Status = "ready"
 		}
 	} else if state.Draft != nil {
@@ -254,11 +279,63 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 			}
 		}
 	}
+	// Проверка включает и встречи, ещё не сохранённые из составной команды.
+	conflictActionIndex := -1
+	keys := []string{}
+	conflicts := []domain.Item{}
+	seen := map[string]bool{}
+	for i, item := range created {
+		if item.Type != domain.ItemMeeting {
+			continue
+		}
+		found, err := repo.MeetingConflicts(ctx, domain.Item{UserID: m.UserID, StartAt: item.StartAt, EndAt: item.EndAt})
+		if err != nil {
+			return domain.Reply{}, state, err
+		}
+		if len(found) > 0 && conflictActionIndex < 0 {
+			conflictActionIndex = i
+		}
+		for _, existing := range found {
+			key := existing.ID + ":" + existing.UpdatedAt.UTC().Format(time.RFC3339Nano)
+			if !seen[key] {
+				keys = append(keys, key)
+				conflicts = append(conflicts, present(existing, m.ModelRequest.Timezone, time.Now()))
+				seen[key] = true
+			}
+		}
+		for j := 0; j < i; j++ {
+			if meetingsOverlap(item, created[j]) {
+				if conflictActionIndex < 0 {
+					conflictActionIndex = i
+				}
+				keys = append(keys, fmt.Sprintf("pending:%d:%d", j, i))
+				conflicts = append(conflicts, created[j], item)
+			}
+		}
+	}
+	approved := map[string]bool{}
+	for _, key := range approvedConflicts {
+		approved[key] = true
+	}
+	needsConfirmation := false
+	for _, key := range keys {
+		if !approved[key] {
+			needsConfirmation = true
+		}
+	}
+	if needsConfirmation {
+		reply, next, err := confirmation(state, m, result.Actions, conflictQuestion(conflicts, m.ModelRequest.Timezone))
+		next.Draft.ConflictKeys = keys
+		next.Draft.ConflictActionIndex = conflictActionIndex
+		reply.Data = map[string]any{"pending_intent": "create", "reason": "meeting_conflict", "conflicts": conflicts, "count": len(created)}
+		reply.Items = conflicts
+		return reply, next, err
+	}
 	// Сначала проверяются все команды, затем все записи сохраняются в общей транзакции.
 	items := []domain.Item{}
 	actions := []map[string]any{}
 	for _, item := range created {
-		saved, err := NewItems(repo).Create(ctx, m.UserID, item)
+		saved, err := NewItems(repo).CreateWithOptions(ctx, m.UserID, item, SaveOptions{AllowConflicts: true})
 		if err != nil {
 			return domain.Reply{}, state, err
 		}

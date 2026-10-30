@@ -43,6 +43,13 @@ func decode(w http.ResponseWriter, r *http.Request, value any) error {
 func serviceError(message string) error { return errors.Join(service.ErrInvalid, errors.New(message)) }
 
 func failure(w http.ResponseWriter, err error) {
+	var meeting *service.MeetingConflictError
+	if errors.As(err, &meeting) {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{
+			"code": "meeting_conflict", "message": meeting.Error(), "conflicts": meeting.Conflicts,
+		}})
+		return
+	}
 	status, code, message := http.StatusInternalServerError, "internal", "Не получилось выполнить запрос."
 	switch {
 	case errors.Is(err, service.ErrInvalid):
@@ -136,19 +143,20 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 }
 
 type createItemRequest struct {
-	Type         domain.ItemType `json:"type"`
-	Title        string          `json:"title"`
-	SourceText   string          `json:"source_text"`
-	DueDate      *domain.Date    `json:"due_date"`
-	DueAt        *time.Time      `json:"due_at"`
-	PeriodStart  *time.Time      `json:"period_start"`
-	PeriodEnd    *time.Time      `json:"period_end"`
-	StartAt      *time.Time      `json:"start_at"`
-	EndAt        *time.Time      `json:"end_at"`
-	AllDay       bool            `json:"all_day"`
-	Participants []string        `json:"participants"`
-	Location     *string         `json:"location"`
-	RemindAt     *time.Time      `json:"remind_at"`
+	AllowConflicts bool            `json:"allow_conflicts"`
+	Type           domain.ItemType `json:"type"`
+	Title          string          `json:"title"`
+	SourceText     string          `json:"source_text"`
+	DueDate        *domain.Date    `json:"due_date"`
+	DueAt          *time.Time      `json:"due_at"`
+	PeriodStart    *time.Time      `json:"period_start"`
+	PeriodEnd      *time.Time      `json:"period_end"`
+	StartAt        *time.Time      `json:"start_at"`
+	EndAt          *time.Time      `json:"end_at"`
+	AllDay         bool            `json:"all_day"`
+	Participants   []string        `json:"participants"`
+	Location       *string         `json:"location"`
+	RemindAt       *time.Time      `json:"remind_at"`
 }
 
 func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +166,7 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item := domain.Item{Type: req.Type, Title: req.Title, SourceText: req.SourceText, DueDate: req.DueDate, DueAt: req.DueAt, PeriodStart: req.PeriodStart, PeriodEnd: req.PeriodEnd, StartAt: req.StartAt, EndAt: req.EndAt, AllDay: req.AllDay, Participants: req.Participants, Location: req.Location, RemindAt: req.RemindAt}
-	saved, err := h.items.Create(r.Context(), domain.DemoUserID, item)
+	saved, err := h.items.CreateWithOptions(r.Context(), domain.DemoUserID, item, service.SaveOptions{AllowConflicts: req.AllowConflicts})
 	if err != nil {
 		failure(w, err)
 		return
