@@ -13,6 +13,7 @@ import (
 	"gorky/backend/internal/migration"
 	"gorky/backend/internal/queue"
 	"gorky/backend/internal/repository/postgres"
+	sessionredis "gorky/backend/internal/repository/redis"
 	"gorky/backend/internal/service"
 	httptransport "gorky/backend/internal/transport/http"
 )
@@ -68,10 +69,18 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("initialize Redis: %w", err)
 	}
 	defer bus.Close()
-	store := postgres.NewMessages(db)
+	authCtx, cancelAuth := context.WithTimeout(ctx, a.cfg.DatabaseTimeout)
+	sessions, err := sessionredis.OpenSessions(authCtx, a.cfg.RedisURL)
+	cancelAuth()
+	if err != nil {
+		return fmt.Errorf("initialize sessions: %w", err)
+	}
+	defer sessions.Close()
+	auth := service.NewAuth(postgres.NewUsers(db), sessions, a.cfg.SessionTTL)
+	store := postgres.NewMessages(db, sessions)
 	messages := service.NewMessages(store, a.cfg.MessageTimeout)
 	items := service.NewItems(postgres.NewItems(db))
-	a.server.Handler = httptransport.NewRouter(messages, items, a.cfg.WebDir)
+	a.server.Handler = httptransport.NewRouter(messages, items, auth, a.cfg.WebDir)
 	workerCtx, cancelWorkers := context.WithCancel(ctx)
 	waitWorkers := bus.Start(workerCtx, store, messages.HandleResult, a.logger)
 	defer func() { cancelWorkers(); waitWorkers() }()
