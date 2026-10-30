@@ -16,12 +16,12 @@ type Messages struct{ db *sql.DB }
 
 func NewMessages(db *sql.DB) *Messages { return &Messages{db: db} }
 
-const messageColumns = `id,status,response,created_at,deadline_at,user_id,request,model_request,attempt_id,attempts`
+const messageColumns = `id,status,response,created_at,deadline_at,user_id,request,model_request,attempt_id,attempts,input_token`
 
 func scanMessage(row interface{ Scan(...any) error }) (domain.Message, error) {
 	var m domain.Message
 	var response, request, model []byte
-	err := row.Scan(&m.ID, &m.Status, &response, &m.CreatedAt, &m.DeadlineAt, &m.UserID, &request, &model, &m.AttemptID, &m.Attempts)
+	err := row.Scan(&m.ID, &m.Status, &response, &m.CreatedAt, &m.DeadlineAt, &m.UserID, &request, &model, &m.AttemptID, &m.Attempts, &m.InputToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, repository.ErrNotFound
 	}
@@ -67,7 +67,7 @@ func (r *Messages) Submit(ctx context.Context, user string, req domain.MessageRe
 		return m, err
 	}
 	var busy bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM messages WHERE user_id=$1 AND session_id=$2 AND status='processing')`, user, req.SessionID).Scan(&busy); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM messages WHERE user_id=$1 AND session_id=$2 AND status IN ('processing','awaiting_input','awaiting_confirmation'))`, user, req.SessionID).Scan(&busy); err != nil {
 		return m, err
 	}
 	if busy {
@@ -176,18 +176,7 @@ func (r *Messages) Apply(ctx context.Context, result domain.ResultEnvelope, retr
 	if len(state.History) > 10 {
 		state.History = state.History[len(state.History)-10:]
 	}
-	if err = saveState(ctx, tx, user, session, state); err != nil {
-		return err
-	}
-	raw, err := json.Marshal(reply)
-	if err != nil {
-		return err
-	}
-	status := "completed"
-	if reply.Type == "error" {
-		status = "failed"
-	}
-	_, err = tx.ExecContext(ctx, `UPDATE messages SET status=$2,response=$3,finished_at=now() WHERE id=$1`, m.ID, status, string(raw))
+	_, err = persistReply(ctx, tx, m, state, reply, "")
 	if err != nil {
 		return err
 	}
@@ -226,14 +215,15 @@ func (r *Messages) PublishPending(ctx context.Context, publish func(context.Cont
 }
 
 func (r *Messages) Expire(ctx context.Context) error {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,attempt_id FROM messages WHERE status='processing' AND deadline_at<=now() LIMIT 100`)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,user_id FROM messages WHERE status IN ('processing','awaiting_input','awaiting_confirmation') AND deadline_at<=now() LIMIT 100`)
 	if err != nil {
 		return err
 	}
-	var results []domain.ResultEnvelope
+	type expired struct{ id, user string }
+	var results []expired
 	for rows.Next() {
-		var result domain.ResultEnvelope
-		if err = rows.Scan(&result.MessageID, &result.AttemptID); err != nil {
+		var result expired
+		if err = rows.Scan(&result.id, &result.user); err != nil {
 			rows.Close()
 			return err
 		}
@@ -245,7 +235,7 @@ func (r *Messages) Expire(ctx context.Context) error {
 		return err
 	}
 	for _, result := range results {
-		if err = r.Apply(ctx, result, false, nil); err != nil {
+		if _, err = r.terminate(ctx, result.user, result.id, true); err != nil {
 			return err
 		}
 	}

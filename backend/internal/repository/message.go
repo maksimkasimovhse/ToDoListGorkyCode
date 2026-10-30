@@ -11,6 +11,8 @@ import (
 var (
 	ErrBusy                = errors.New("conversation is processing another message")
 	ErrIdempotencyConflict = errors.New("client_message_id already used for another request")
+	ErrMessageState        = errors.New("message is not awaiting input")
+	ErrInputToken          = errors.New("input token is outdated")
 )
 
 // Выполнение команды, состояние диалога и ответ сохраняются одной транзакцией.
@@ -24,4 +26,6 @@ type MessageRepository interface {
 	PublishPending(context.Context, func(context.Context, domain.Job) error) error
 	Expire(context.Context) error
 	History(context.Context, string, string) ([]domain.Message, error)
+	Answer(context.Context, string, string, domain.MessageAnswer, Executor) (domain.Message, error)
+	Cancel(context.Context, string, string) (domain.Message, error)
 }

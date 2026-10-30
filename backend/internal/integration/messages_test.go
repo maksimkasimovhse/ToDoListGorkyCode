@@ -248,15 +248,11 @@ func TestMessagePipeline(t *testing.T) {
 		m, _ := f.submit(t, "clarify", "Поставь встречу с Иваном завтра")
 		job := f.job(t)
 		f.result(t, job, fmt.Sprintf(`{"status":"needs_clarification","actions":[{"intent":"create_meeting","params":{"title":"Встреча с Иваном","date":"%s","participants":["Иван"]}}],"missing":["time"]}`, job.Request.Now.AddDate(0, 0, 2).Format(time.DateOnly)))
-		if done := f.completed(t, m.ID); done.Response.Type != "clarify" {
-			t.Fatalf("ожидалось уточнение: %+v", done)
+		waiting := f.completed(t, m.ID)
+		if waiting.Response.Type != "clarify" || waiting.Status != "awaiting_input" || waiting.InputToken == nil {
+			t.Fatalf("ожидалось уточнение: %+v", waiting)
 		}
-		m, _ = f.submit(t, "clarify", "В 17")
-		job = f.job(t)
-		if job.Request.Draft == nil || job.Request.Expects == nil || *job.Request.Expects != "time" || len(job.Request.History) != 2 {
-			t.Fatal("контекст потерян")
-		}
-		f.result(t, job, `{"status":"ready","actions":[{"intent":"answer","params":{"value":{"time":"17:00","duration_min":30}}}]}`)
+		f.request(t, "POST", "/api/messages/"+m.ID+"/answer", map[string]any{"input_token": *waiting.InputToken, "time": "17:00", "duration_min": 30}, 200)
 		done := f.completed(t, m.ID)
 		if done.Response.Type != "done" || len(done.Response.Items) != 1 {
 			t.Fatalf("%+v", done)
@@ -344,12 +340,11 @@ func TestMessagePipeline(t *testing.T) {
 		m, _ := f.submit(t, "duplicate", "Добавь первую задачу ещё раз")
 		job := f.job(t)
 		f.result(t, job, `{"status":"ready","actions":[{"intent":"create_task","params":{"title":"первая"}}]}`)
-		if done := f.completed(t, m.ID); done.Response.Type != "confirm" {
+		waiting := f.completed(t, m.ID)
+		if waiting.Response.Type != "confirm" || waiting.Status != "awaiting_confirmation" || waiting.InputToken == nil {
 			t.Fatal("не запрошено подтверждение дубликата")
 		}
-		m, _ = f.submit(t, "duplicate", "Да")
-		job = f.job(t)
-		f.result(t, job, `{"status":"ready","actions":[{"intent":"answer","params":{"value":true}}]}`)
+		f.request(t, "POST", "/api/messages/"+m.ID+"/answer", map[string]any{"input_token": *waiting.InputToken, "confirmed": true}, 200)
 		if done := f.completed(t, m.ID); done.Response.Type != "done" {
 			t.Fatal("подтверждённая запись не создана")
 		}
@@ -372,12 +367,11 @@ func TestMessagePipeline(t *testing.T) {
 		m, _ := f.submit(t, "past", "Напомни сегодня в полночь")
 		job := f.job(t)
 		f.result(t, job, fmt.Sprintf(`{"status":"ready","actions":[{"intent":"create_reminder","params":{"title":"прошедшее время","date":"%s","time":"00:00"}}]}`, job.Request.Now.AddDate(0, 0, -1).Format(time.DateOnly)))
-		if done := f.completed(t, m.ID); done.Response.Type != "confirm" {
+		waiting := f.completed(t, m.ID)
+		if waiting.Response.Type != "confirm" || waiting.InputToken == nil {
 			t.Fatal("не запрошено подтверждение прошедшего времени")
 		}
-		m, _ = f.submit(t, "past", "Да")
-		job = f.job(t)
-		f.result(t, job, `{"status":"ready","actions":[{"intent":"answer","params":{"value":true}}]}`)
+		f.request(t, "POST", "/api/messages/"+m.ID+"/answer", map[string]any{"input_token": *waiting.InputToken, "confirmed": true}, 200)
 		done := f.completed(t, m.ID)
 		if done.Response.Type != "done" || done.Response.Items[0].RemindAt.Format(time.DateOnly) != job.Request.Now.AddDate(0, 0, 1).Format(time.DateOnly) {
 			t.Fatalf("неверный перенос: %+v", done)

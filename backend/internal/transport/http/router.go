@@ -14,6 +14,8 @@ func NewRouter(messages *service.Messages, items *service.Items) http.Handler {
 	handler := &Handler{messages: messages, items: items}
 	router.Post("/api/message", handler.submit)
 	router.Get("/api/messages/{id}", handler.poll)
+	router.Post("/api/messages/{id}/answer", handler.answer)
+	router.Post("/api/messages/{id}/cancel", handler.cancel)
 	router.Get("/api/history", handler.history)
 	router.Post("/api/items", handler.createItem)
 	router.Get("/api/items", handler.listItems)
