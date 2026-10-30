@@ -1,4 +1,4 @@
-// Package service is reserved for application use cases: validation, dialogue
-// orchestration, date rules, and calls to storage and model interfaces.
-// Business operations will be added here with their first working scenarios.
+// Пакет service предназначен для сценариев приложения: проверки данных,
+// управления диалогом, правил обработки дат и вызовов интерфейсов хранилища и модели.
+// Бизнес-операции будут добавлены вместе с первыми работающими сценариями.
 package service

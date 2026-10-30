@@ -1,4 +1,4 @@
-// Package migration runs versioned SQL migrations from a directory.
+// Пакет migration выполняет версионированные SQL-миграции из указанной папки.
 package migration
 
 import (

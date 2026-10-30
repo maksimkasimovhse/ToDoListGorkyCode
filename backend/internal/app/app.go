@@ -1,4 +1,4 @@
-// Package app wires application dependencies and manages their lifecycle.
+// Пакет app собирает зависимости приложения и управляет их жизненным циклом.
 package app
 
 import (

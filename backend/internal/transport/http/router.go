@@ -1,4 +1,4 @@
-// Package http exposes the application's HTTP transport.
+// Пакет http реализует HTTP-транспорт приложения.
 package http
 
 import (
@@ -13,7 +13,7 @@ func NewRouter() http.Handler {
 	return router
 }
 
-// health reports process liveness, not database or model availability.
+// health проверяет, что процесс работает; доступность БД и модели не проверяется.
 func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
