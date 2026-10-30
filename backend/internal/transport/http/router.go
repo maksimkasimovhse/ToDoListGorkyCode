@@ -19,6 +19,8 @@ func NewRouter(messages *service.Messages, items *service.Items, auth *service.A
 		protected.Use(handler.requireAuth)
 		protected.Post("/api/auth/logout", handler.logout)
 		protected.Get("/api/me", handler.me)
+		protected.Post("/api/session/reset", handler.resetSession)
+		protected.Post("/api/undo", handler.undo)
 		protected.Post("/api/message", handler.submit)
 		protected.Get("/api/messages/{id}", handler.poll)
 		protected.Post("/api/messages/{id}/answer", handler.answer)

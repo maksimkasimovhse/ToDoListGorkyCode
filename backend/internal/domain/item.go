@@ -27,7 +27,13 @@ type Date string
 // Item — начальная модель записи. Повторы будут добавлены вместе с соответствующими сценариями.
 // У задачи может быть не больше одного варианта срока: DueDate, DueAt или период.
 // Входные DTO определяются отдельно; JSON-теги задают представление записи в ответах.
+type ItemChange struct {
+	Before *Item `json:"before"`
+	After  Item  `json:"after"`
+}
+
 type Item struct {
+	UndoToken    *string      `json:"undo_token,omitempty"`
 	ID           string       `json:"id"`
 	UserID       string       `json:"user_id"`
 	Type         ItemType     `json:"type"`

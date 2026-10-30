@@ -9,6 +9,13 @@ import (
 	"gorky/backend/internal/domain"
 )
 
+var ErrUndoExpired = errors.New("undo expired")
+var ErrUndoConflict = errors.New("records changed after operation")
+
+type UndoMeetingConflict struct{ Conflicts []domain.Item }
+
+func (e *UndoMeetingConflict) Error() string { return "undo meeting conflict" }
+
 var ErrConflict = errors.New("item changed concurrently")
 
 var ErrNotFound = errors.New("item not found")
@@ -16,6 +23,8 @@ var ErrNotFound = errors.New("item not found")
 // ItemRepository всегда ограничивает доступ по userID, включая операции записи.
 // Удалённые записи исключаются. Для чужих идентификаторов возвращается ErrNotFound.
 type ItemRepository interface {
+	WithUndo(context.Context, string, func(ItemRepository) error) (*string, error)
+	Undo(context.Context, string, string) (domain.Reply, error)
 	WithUserLock(context.Context, string, func(ItemRepository) error) error
 	MeetingConflicts(context.Context, domain.Item) ([]domain.Item, error)
 	Update(context.Context, domain.Item, time.Time) (domain.Item, error)

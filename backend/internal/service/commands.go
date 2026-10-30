@@ -39,11 +39,14 @@ type params struct {
 func execute(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
 	var reply domain.Reply
 	var next domain.DialogueState
-	err := repo.WithUserLock(ctx, m.UserID, func(locked repository.ItemRepository) error {
+	token, err := repo.WithUndo(ctx, m.UserID, func(locked repository.ItemRepository) error {
 		var err error
 		reply, next, err = executeLocked(ctx, locked, m, state, result)
 		return err
 	})
+	if err == nil {
+		reply.UndoToken = token
+	}
 	return reply, next, err
 }
 
