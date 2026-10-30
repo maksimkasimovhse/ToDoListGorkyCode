@@ -37,7 +37,7 @@ export function createChat({ container, scroller, emptyState, handlers }) {
 
     const body = renderBody(response);
     if (body) message.append(body);
-    if (response.flow && response.flow.status === 'awaiting_input') message.append(renderForm(response, interactive));
+    if (response.flow && response.flow.status === 'awaiting_input' && response.type !== 'choose') message.append(renderForm(response, interactive));
 
     const actions = el('div', 'options');
     for (const option of response.options || []) {
@@ -47,6 +47,12 @@ export function createChat({ container, scroller, emptyState, handlers }) {
       button.disabled = !interactive;
       button.addEventListener('click', () => handlers.onOption(option, response.flow));
       actions.append(button);
+    }
+    if (response.flow && response.type === 'choose') {
+      const cancel = el('button', 'option option--quiet', 'Отмена');
+      cancel.type = 'button'; cancel.dataset.kind = 'choice'; cancel.disabled = !interactive;
+      cancel.addEventListener('click', () => handlers.onFlowCancel(response.flow));
+      actions.append(cancel);
     }
     if (response.undo_token) {
       const button = el('button', 'option option--quiet', 'Отменить');

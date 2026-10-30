@@ -63,7 +63,7 @@ const chat = createChat({
     // Текст кнопки тоже отправляем: он попадает в историю и понятен серверу без choice
     // Подтверждение сценария бэкенда — через /answer; без flow (заглушка) — обычным сообщением
     onOption: (option, flow) => (flow
-      ? runFlow(option.label, (f) => api.answerFlow(f, { confirmed: option.id === 'yes' }))
+      ? runFlow(option.label, (f) => api.answerFlow(f, f.reply.type === 'choose' ? { option_id: option.id } : { confirmed: option.id === 'yes' }))
       : send({ text: option.label, choice: { option_id: option.id } })),
     onFlowAnswer: (flow, fields) => runFlow(describeFields(fields), (f) => api.answerFlow(f, fields)),
     onFlowCancel: () => runFlow('Отмена', api.cancelFlow),
@@ -196,6 +196,7 @@ function answerByText(text, inputMode) {
   const voice = inputMode === 'voice';
   const flow = state.flow;
   if (isCancel(text)) return runFlow(text, api.cancelFlow, { voice });
+  if (flow.reply.type === 'choose') return runFlow(text, (f) => api.answerFlow(f, { text }), { voice });
   if (flow.status === 'awaiting_confirmation') {
     const confirmed = parseConfirmation(text);
     if (confirmed === null) return toast('Ответьте «да» или «нет».');

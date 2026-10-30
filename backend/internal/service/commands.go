@@ -61,6 +61,9 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 		state.Expects = nil
 		return domain.NewReply("info", "Хорошо, не добавляю.", map[string]any{"reason": "cancelled"}), state, nil
 	}
+	if len(result.Actions) == 1 && isMutation(result.Actions[0].Intent) {
+		return startMutation(ctx, repo, m, state, result.Actions[0])
+	}
 	if len(result.Actions) == 1 && result.Actions[0].Intent == "answer" {
 		if state.Draft == nil || !m.ModelRequest.Now.Before(state.Draft.ExpiresAt) {
 			state.Draft = nil
@@ -234,6 +237,7 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 			reply := domain.NewReply("results", text, data)
 			reply.Items = items
 			state.Candidates = items
+			state.Focus = nil
 			if len(items) == 1 {
 				state.Focus = &items[0]
 			}

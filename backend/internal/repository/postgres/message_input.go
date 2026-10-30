@@ -39,7 +39,7 @@ func persistReply(ctx context.Context, tx *sql.Tx, m domain.Message, state domai
 	switch reply.Type {
 	case "error":
 		status = "failed"
-	case "clarify", "confirm":
+	case "clarify", "confirm", "choose":
 		if state.Draft == nil {
 			return m, errors.New("waiting response requires a draft")
 		}
