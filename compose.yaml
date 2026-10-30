@@ -1,0 +1,63 @@
+name: backend
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://gorky:${POSTGRES_PASSWORD:-gorky}@postgres:5432/gorky?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      MIGRATIONS_DIR: /app/migrations
+      WEB_DIR: /app/web
+      ML_REQUEST_STREAM: ${ML_REQUEST_STREAM:-planner:ml:requests}
+      ML_RESULT_STREAM: ${ML_RESULT_STREAM:-planner:ml:results}
+      ML_RESULT_GROUP: ${ML_RESULT_GROUP:-planner-backend}
+      MESSAGE_TIMEOUT: ${MESSAGE_TIMEOUT:-15s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: gorky
+      POSTGRES_USER: gorky
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gorky}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gorky -d gorky"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres_data:
+  redis_data:
