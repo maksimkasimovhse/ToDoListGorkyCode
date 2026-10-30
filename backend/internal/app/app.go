@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"gorky/backend/internal/config"
+	"gorky/backend/internal/repository/postgres"
 	httptransport "gorky/backend/internal/transport/http"
+	"gorky/backend/migrations"
 )
 
 type App struct {
@@ -35,6 +37,30 @@ func New(cfg config.Config, logger *slog.Logger) *App {
 }
 
 func (a *App) Run(ctx context.Context) error {
+	dbCtx, cancelDB := context.WithTimeout(ctx, a.cfg.DatabaseTimeout)
+	db, err := postgres.Open(dbCtx, a.cfg.DatabaseURL)
+	cancelDB()
+	if err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	defer db.Close()
+	a.logger.Info("connected to PostgreSQL")
+
+	provider, err := migrations.NewProvider(db)
+	if err != nil {
+		return fmt.Errorf("initialize migrations: %w", err)
+	}
+	migrationCtx, cancelMigrations := context.WithTimeout(ctx, a.cfg.MigrationTimeout)
+	results, err := provider.Up(migrationCtx)
+	cancelMigrations()
+	if err != nil {
+		return fmt.Errorf("apply migrations: %w", err)
+	}
+	a.logger.Info("database migrations applied", "count", len(results))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- a.server.ListenAndServe()
