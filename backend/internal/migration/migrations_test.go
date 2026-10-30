@@ -53,7 +53,7 @@ func TestMigrationsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	results, err := provider.Up(ctx)
-	if err != nil || len(results) != 1 {
+	if err != nil || len(results) != 3 {
 		t.Fatalf("first up: count=%d, err=%v", len(results), err)
 	}
 	results, err = provider.Up(ctx)
@@ -71,6 +71,12 @@ func TestMigrationsPostgres(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO items (user_id, type, title, source_text, status)
 		VALUES ($1, 'meeting', 'встреча', 'исходный запрос', 'scheduled')`, userID); err == nil {
 		t.Fatal("meeting without start/end was accepted")
+	}
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)

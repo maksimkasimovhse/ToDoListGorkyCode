@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Голосовой ассистент</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 9.5c1.2 4.2 7.8 4.2 10 0"/><path d="M12 4.5v3"/></svg>
+      </span>
+      <span class="brand__name">Service name</span>
+    </div>
+    <button class="profile" id="profile-btn" type="button" aria-label="Профиль" title="Гость">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c0-4.2 3.6-6.5 8-6.5s8 2.3 8 6.5z"/></svg>
+    </button>
+  </header>
+
+  <main class="layout">
+    <aside class="panel recent" aria-label="Последнее">
+      <h2 class="panel__title">Последнее</h2>
+      <div class="panel__body">
+        <label class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="recent-search" type="search" placeholder="Поиск" autocomplete="off" aria-label="Поиск по записям">
+        </label>
+        <div class="filters__label">Выбрать метки:</div>
+        <div class="chips" id="recent-filters"></div>
+        <h3 class="recent__heading" id="recent-heading">Последние записи</h3>
+        <ul class="recent__list" id="recent-list"></ul>
+      </div>
+    </aside>
+
+    <section class="panel assistant" aria-label="Ассистент">
+      <div class="panel__head">
+        <h2 class="panel__title">Ассистент</h2>
+        <div class="assistant__tools">
+          <label class="switch">
+            <input type="checkbox" id="speak-toggle">
+            <span class="switch__track" aria-hidden="true"></span>
+            <span>Озвучивать ответы</span>
+          </label>
+          <button class="btn-ghost" id="new-dialog" type="button">Новый диалог</button>
+        </div>
+      </div>
+
+      <div class="chat" id="chat">
+        <div class="empty" id="chat-empty">
+          <button class="mic-hero" id="mic-hero" type="button" aria-label="Начать запись">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3.5"/></svg>
+          </button>
+          <p class="empty__text">Задайте ассистенту вопрос<br>или создайте задачу или напоминание</p>
+          <p class="empty__hint" id="mic-hint"></p>
+        </div>
+        <div class="messages" id="messages" aria-live="polite"></div>
+      </div>
+
+      <div class="composer">
+        <div class="selection" id="selection" hidden>
+          <span>Про запись:</span>
+          <strong id="selection-title"></strong>
+          <button type="button" id="selection-clear" aria-label="Снять выбор">×</button>
+        </div>
+        <form class="composer__form" id="composer">
+          <input id="composer-input" type="text" autocomplete="off" placeholder="Напишите сообщение" aria-label="Сообщение ассистенту">
+          <button class="icon-btn mic-btn" id="mic-btn" type="button" aria-label="Голосовой ввод">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>
+          </button>
+          <button class="icon-btn send-btn" id="send-btn" type="submit" aria-label="Отправить">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <aside class="panel planner" aria-label="Мои записи">
+      <h2 class="panel__title">Мои записи</h2>
+      <div class="tabs" id="planner-tabs" role="tablist">
+        <button class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="upcoming">Ближайшие</button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="today">Сегодня</button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="tomorrow">Завтра</button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="week">Неделя</button>
+      </div>
+      <div class="planner__body" id="planner-body"></div>
+    </aside>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>
