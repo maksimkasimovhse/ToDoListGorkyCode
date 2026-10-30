@@ -71,7 +71,7 @@ func (a *App) Run(ctx context.Context) error {
 	store := postgres.NewMessages(db)
 	messages := service.NewMessages(store, a.cfg.MessageTimeout)
 	items := service.NewItems(postgres.NewItems(db))
-	a.server.Handler = httptransport.NewRouter(messages, items)
+	a.server.Handler = httptransport.NewRouter(messages, items, a.cfg.WebDir)
 	workerCtx, cancelWorkers := context.WithCancel(ctx)
 	waitWorkers := bus.Start(workerCtx, store, messages.HandleResult, a.logger)
 	defer func() { cancelWorkers(); waitWorkers() }()

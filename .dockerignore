@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+**/bin
+**/*.exe
+**/*.log
+**/coverage.out
+**/node_modules
+work
+outputs

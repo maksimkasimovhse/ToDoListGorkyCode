@@ -47,6 +47,8 @@ func failure(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalid):
 		status, code, message = 400, "validation", err.Error()
+	case errors.Is(err, repository.ErrConflict):
+		status, code, message = 409, "item_conflict", "Запись изменилась. Обновите её и повторите запрос."
 	case errors.Is(err, repository.ErrNotFound):
 		status, code, message = 404, "not_found", "Запись не найдена."
 	case errors.Is(err, repository.ErrBusy):
@@ -219,4 +221,25 @@ func (h *Handler) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"items": items, "total": total, "overdue": []domain.Item{}, "semantic": false})
+}
+func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
+	var patch map[string]json.RawMessage
+	if err := decode(w, r, &patch); err != nil {
+		failure(w, err)
+		return
+	}
+	item, err := h.items.Update(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"), patch)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) deleteItem(w http.ResponseWriter, r *http.Request) {
+	if err := h.items.Delete(r.Context(), domain.DemoUserID, chi.URLParam(r, "id")); err != nil {
+		failure(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
