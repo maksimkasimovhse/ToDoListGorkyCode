@@ -51,11 +51,26 @@ type Message struct {
 	Response     *Reply         `json:"response"`
 	CreatedAt    time.Time      `json:"created_at"`
 	DeadlineAt   time.Time      `json:"deadline_at"`
+	InputToken   *string        `json:"input_token"`
 	UserID       string         `json:"-"`
 	Request      MessageRequest `json:"-"`
 	ModelRequest ModelRequest   `json:"-"`
 	AttemptID    string         `json:"-"`
 	Attempts     int            `json:"-"`
+}
+
+func (m Message) Active() bool {
+	return m.Status == "processing" || m.Status == "awaiting_input" || m.Status == "awaiting_confirmation"
+}
+
+// InputToken связывает ответ с конкретным окном уточнения и защищает от повторной отправки.
+type MessageAnswer struct {
+	InputToken  string  `json:"input_token"`
+	Date        *string `json:"date,omitempty"`
+	Time        *string `json:"time,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	DurationMin *int    `json:"duration_min,omitempty"`
+	Confirmed   *bool   `json:"confirmed,omitempty"`
 }
 
 type Turn struct {

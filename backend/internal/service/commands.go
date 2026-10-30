@@ -38,6 +38,7 @@ type params struct {
 
 func execute(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
 	confirmed := false
+	progress := false
 	if result.Status == "not_understood" {
 		state.Draft = nil
 		state.Expects = nil
@@ -100,6 +101,7 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 					continue
 				}
 				original[key] = value
+				progress = true
 			}
 			raw, _ := json.Marshal(original)
 			result.Actions = []domain.Action{{Intent: state.Draft.Action.Intent, Params: raw}}
@@ -133,7 +135,10 @@ func execute(ctx context.Context, repo repository.ItemRepository, m domain.Messa
 				}
 				attempt := 0
 				if state.Draft != nil {
-					attempt = state.Draft.Attempt + 1
+					attempt = state.Draft.Attempt
+					if !progress {
+						attempt++
+					}
 				}
 				if attempt >= 2 {
 					state.Draft = nil

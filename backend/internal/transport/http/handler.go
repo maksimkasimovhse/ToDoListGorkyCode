@@ -52,7 +52,11 @@ func failure(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrBusy):
 		status, code, message = 409, "conversation_busy", "Дождитесь завершения предыдущего сообщения."
 	case errors.Is(err, repository.ErrIdempotencyConflict):
-		status, code, message = 409, "idempotency_conflict", "Этот client_message_id уже использован для другого запроса."
+		status, code, message = 409, "idempotency_conflict", "Этот идентификатор уже использован для другого запроса."
+	case errors.Is(err, repository.ErrMessageState):
+		status, code, message = 409, "message_state", "Сценарий не ожидает такой операции. Получите актуальный статус."
+	case errors.Is(err, repository.ErrInputToken):
+		status, code, message = 409, "stale_input", "Окно уточнения устарело. Получите актуальный статус."
 	}
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
@@ -86,6 +90,29 @@ func (h *Handler) poll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, message)
 }
 
+func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
+	var answer domain.MessageAnswer
+	if err := decode(w, r, &answer); err != nil {
+		failure(w, err)
+		return
+	}
+	message, err := h.messages.Answer(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"), answer)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, message)
+}
+
+func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
+	message, err := h.messages.Cancel(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, message)
+}
+
 func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 	messages, err := h.messages.History(r.Context(), domain.DemoUserID, r.URL.Query().Get("session_id"))
 	if err != nil {
@@ -98,7 +125,8 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 		turns = append(turns, map[string]any{"role": "user", "text": m.ModelRequest.Text, "response": nil, "at": m.CreatedAt, "message_id": m.ID})
 		if m.Response != nil {
 			turns = append(turns, map[string]any{"role": "assistant", "text": m.Response.Reply, "response": m.Response, "at": m.CreatedAt, "message_id": m.ID})
-		} else {
+		}
+		if m.Active() {
 			pending = append(pending, m)
 		}
 	}
