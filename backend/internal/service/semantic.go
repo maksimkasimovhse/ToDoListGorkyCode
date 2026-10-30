@@ -5,12 +5,22 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 
 	"gorky/backend/internal/domain"
 	"gorky/backend/internal/repository"
 )
 
-const semanticThreshold = 0.50
+// Embeddings-2 is normalized by the worker. Cosine similarity is therefore
+// stable across request lengths and is the distance metric used for nearest
+// neighbours (cosine distance = 1 - cosine similarity).
+const (
+	semanticThreshold = 0.50
+	semanticWeight    = 0.78
+	lexicalWeight     = 0.16
+	rankWeight        = 0.06
+	maxNeighbours     = 99 // plus the query: worker accepts at most 100 texts
+)
 
 func itemSearchText(item domain.Item) string {
 	parts := []string{item.Title, item.SourceText, strings.Join(item.Participants, " ")}
@@ -36,6 +46,48 @@ func cosine(left, right []float64) float64 {
 	return dot / math.Sqrt(a*b)
 }
 
+var searchStopWords = map[string]struct{}{
+	"и": {}, "в": {}, "во": {}, "на": {}, "по": {}, "с": {}, "со": {}, "за": {}, "к": {}, "ко": {},
+	"о": {}, "об": {}, "от": {}, "до": {}, "для": {}, "про": {}, "мой": {}, "моя": {}, "мои": {},
+	"мне": {}, "у": {}, "что": {}, "это": {}, "задача": {}, "задачи": {}, "встреча": {}, "встречи": {},
+}
+
+func tokens(text string) map[string]struct{} {
+	result := map[string]struct{}{}
+	for _, token := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len([]rune(token)) < 2 {
+			continue
+		}
+		if _, stop := searchStopWords[token]; !stop {
+			result[token] = struct{}{}
+		}
+	}
+	return result
+}
+
+// lexicalAffinity adds an explainable signal for named entities and words the
+// vector model may smooth over. Title matches count more than source-text-only
+// matches: a task title is normally the best identity of a neighbour.
+func lexicalAffinity(query map[string]struct{}, item domain.Item) float64 {
+	if len(query) == 0 {
+		return 0
+	}
+	all := tokens(itemSearchText(item))
+	title := tokens(item.Title)
+	var matched, titleMatched int
+	for token := range query {
+		if _, ok := all[token]; ok {
+			matched++
+		}
+		if _, ok := title[token]; ok {
+			titleMatched++
+		}
+	}
+	return 0.70*float64(matched)/float64(len(query)) + 0.30*float64(titleMatched)/float64(len(query))
+}
+
 // Search combines the existing lexical search with semantic similarity. If the
 // embedding service is unavailable, callers still get the lexical result.
 func (s *Items) Search(ctx context.Context, user string, filter repository.ItemFilter) ([]domain.Item, bool, error) {
@@ -48,10 +100,26 @@ func (s *Items) Search(ctx context.Context, user string, filter repository.ItemF
 	candidateFilter := filter
 	candidateFilter.Query = ""
 	// Вместе с запросом это не больше 100 строк за один вызов API.
-	candidateFilter.Limit = 99
-	candidates, err := s.repo.List(ctx, user, candidateFilter)
+	candidateFilter.Limit = maxNeighbours
+	broadCandidates, err := s.repo.List(ctx, user, candidateFilter)
 	if err != nil {
 		return lexical, false, err
+	}
+	// Put direct textual matches into the embedding batch first. Otherwise a
+	// chronologically limited List can omit the exact task we ought to compare.
+	candidates := make([]domain.Item, 0, maxNeighbours)
+	seen := make(map[string]struct{}, maxNeighbours)
+	for _, group := range [][]domain.Item{lexical, broadCandidates} {
+		for _, item := range group {
+			if len(candidates) == maxNeighbours {
+				break
+			}
+			if _, exists := seen[item.ID]; exists {
+				continue
+			}
+			seen[item.ID] = struct{}{}
+			candidates = append(candidates, item)
+		}
 	}
 	if len(candidates) == 0 {
 		return lexical, false, nil
@@ -69,19 +137,24 @@ func (s *Items) Search(ctx context.Context, user string, filter repository.ItemF
 	for index, item := range lexical {
 		lexicalRank[item.ID] = index + 1
 	}
+	queryTokens := tokens(filter.Query)
 	type scored struct {
 		item  domain.Item
 		score float64
 	}
 	ranked := make([]scored, 0, len(candidates))
 	for index, item := range candidates {
-		score := cosine(vectors[0], vectors[index+1])
+		semantic := cosine(vectors[0], vectors[index+1])
 		rank, exact := lexicalRank[item.ID]
-		if !exact && score < semanticThreshold {
+		affinity := lexicalAffinity(queryTokens, item)
+		// A lexical hit is always retained. A semantic-only neighbour needs a
+		// meaningful cosine score, or strong token evidence for names/abbreviations.
+		if !exact && semantic < semanticThreshold && affinity < 0.60 {
 			continue
 		}
+		score := semanticWeight*semantic + lexicalWeight*affinity
 		if exact {
-			score += 0.25 / float64(rank)
+			score += rankWeight / float64(rank)
 		}
 		ranked = append(ranked, scored{item: item, score: score})
 	}

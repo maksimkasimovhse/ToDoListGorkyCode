@@ -134,8 +134,22 @@ def _gigachat_chat(messages: list[dict], schema: dict, timeout: int) -> dict:
         raise ModelError("GigaChat вернул неожиданный ответ") from exc
 
 
-def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool) -> dict:
-    user_content = f"Сейчас: {now.isoformat()}\nЗапрос: {text}"
+def _history_context(history: list[dict] | None) -> str:
+    if not history:
+        return ""
+    turns = []
+    for turn in history[-5:]:
+        if not isinstance(turn, dict):
+            continue
+        role = "Пользователь" if turn.get("role") == "user" else "Ассистент"
+        value = str(turn.get("text") or "").strip()
+        if value:
+            turns.append(f"{role}: {value[:2000]}")
+    return "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(turns) + "\n" if turns else ""
+
+
+def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, history: list[dict] | None = None) -> dict:
+    user_content = f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
     route = _gigachat_chat([
         {"role": "system", "content": ROUTE_PROMPT},
         {"role": "user", "content": user_content},
@@ -156,7 +170,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool) -> d
                     {"role": "system", "content": MEETING_PROMPT},
                     {"role": "user", "content": user_content},
                 ], MEETING_SCHEMA, timeout)
-                command = normalize_meeting(raw)
+                command = normalize_meeting(raw, text)
                 if not command["data"].get("participants") and re.search(
                     r"\bс\s+[А-ЯЁ]", text
                 ):
@@ -185,7 +199,8 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool) -> d
 
 def parse_request(text: str, now: datetime, *, provider: str | None = None,
                   api_key: str | None = None, folder_id: str | None = None,
-                  timeout: int = 120, validate: bool = True) -> dict:
+                  timeout: int = 120, validate: bool = True,
+                  history: list[dict] | None = None) -> dict:
     """Parse one text request using Ollama, YandexGPT or GigaChat."""
     if not text.strip():
         raise ValueError("Запрос пуст")
@@ -193,10 +208,10 @@ def parse_request(text: str, now: datetime, *, provider: str | None = None,
         raise ValueError("now должен содержать часовой пояс")
     provider = provider or os.getenv("PLANNER_PROVIDER", "ollama")
     if provider == "gigachat":
-        return _parse_gigachat(text, now, timeout, validate)
+        return _parse_gigachat(text, now, timeout, validate, history)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Сейчас: {now.isoformat()}\nЗапрос: {text}"},
+        {"role": "user", "content": f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"},
     ]
     if provider == "ollama":
         payload = {

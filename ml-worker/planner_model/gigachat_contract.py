@@ -87,7 +87,7 @@ PARTICIPANTS_PROMPT = """Извлеки только явно названных
 """
 
 
-def normalize_meeting(raw: dict) -> dict:
+def normalize_meeting(raw: dict, text: str = "") -> dict:
     data = {}
     for field in ("title", "description", "start_at", "end_at", "remind_at",
                   "location", "recurrence"):
@@ -99,6 +99,11 @@ def normalize_meeting(raw: dict) -> dict:
         data["duration_minutes"] = duration
     if isinstance(raw.get("participants"), list):
         data["participants"] = raw["participants"]
+    # The model occasionally returns 00:00 for both bounds of an explicitly
+    # all-day meeting. Keep only the start date: the backend will create the
+    # [00:00, next 00:00) interval itself.
+    if re.search(r"\b(?:на\s+)?(?:целый|весь)\s+день\b", text, flags=re.IGNORECASE):
+        data.pop("end_at", None)
     missing = []
     if not data.get("title"):
         missing.append("title")

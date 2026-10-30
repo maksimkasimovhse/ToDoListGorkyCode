@@ -402,6 +402,9 @@ func describe(item domain.Item, timezone string) string {
 	loc, _ := time.LoadLocation(timezone)
 	label := map[domain.ItemType]string{domain.ItemTask: "задачу", domain.ItemReminder: "напоминание", domain.ItemMeeting: "встречу"}[item.Type]
 	text := "Добавил " + label + ": " + item.Title
+	if item.Type == domain.ItemMeeting && item.AllDay && item.StartAt != nil {
+		return text + ", на весь день " + item.StartAt.In(loc).Format("02.01.2006") + "."
+	}
 	for _, at := range []*time.Time{item.StartAt, item.RemindAt, item.DueAt} {
 		if at != nil {
 			return text + ", " + at.In(loc).Format("02.01.2006 15:04") + "."
