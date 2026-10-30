@@ -53,7 +53,7 @@ func TestMigrationsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	results, err := provider.Up(ctx)
-	if err != nil || len(results) != 3 {
+	if err != nil || len(results) != 4 {
 		t.Fatalf("first up: count=%d, err=%v", len(results), err)
 	}
 	results, err = provider.Up(ctx)
@@ -72,14 +72,10 @@ func TestMigrationsPostgres(t *testing.T) {
 		VALUES ($1, 'meeting', 'встреча', 'исходный запрос', 'scheduled')`, userID); err == nil {
 		t.Fatal("meeting without start/end was accepted")
 	}
-	if _, err := provider.Down(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.Down(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.Down(ctx); err != nil {
-		t.Fatal(err)
+	for range 4 {
+		if _, err := provider.Down(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var exists bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('items') IS NOT NULL").Scan(&exists); err != nil {

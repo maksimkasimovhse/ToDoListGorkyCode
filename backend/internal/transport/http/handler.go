@@ -16,6 +16,7 @@ import (
 )
 
 type Handler struct {
+	auth     *service.Auth
 	messages *service.Messages
 	items    *service.Items
 }
@@ -52,6 +53,16 @@ func failure(w http.ResponseWriter, err error) {
 	}
 	status, code, message := http.StatusInternalServerError, "internal", "Не получилось выполнить запрос."
 	switch {
+	case errors.Is(err, service.ErrCredentials):
+		status, code, message = 401, "invalid_credentials", "Неверный логин или пароль."
+	case errors.Is(err, repository.ErrUnauthenticated):
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		status, code, message = 401, "unauthorized", "Войдите в аккаунт: сессия отсутствует или истекла."
+	case errors.Is(err, service.ErrAuthUnavailable):
+		status, code, message = 503, "auth_unavailable", "Не удалось проверить сессию. Попробуйте позже."
+	case errors.Is(err, service.ErrLoginLimit):
+		w.Header().Set("Retry-After", "60")
+		status, code, message = 429, "too_many_attempts", "Слишком много попыток входа. Повторите через минуту."
 	case errors.Is(err, service.ErrInvalid):
 		status, code, message = 400, "validation", err.Error()
 	case errors.Is(err, repository.ErrConflict):
@@ -70,14 +81,14 @@ func failure(w http.ResponseWriter, err error) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
-// Пока авторизация не реализована, все запросы принадлежат одному демопользователю.
+// Владелец берётся только из проверенной сессии авторизации.
 func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	var request domain.MessageRequest
 	if err := decode(w, r, &request); err != nil {
 		failure(w, err)
 		return
 	}
-	message, err := h.messages.Submit(r.Context(), domain.DemoUserID, request)
+	message, err := h.messages.Submit(r.Context(), currentUserID(r), request)
 	if err != nil {
 		failure(w, err)
 		return
@@ -91,7 +102,7 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) poll(w http.ResponseWriter, r *http.Request) {
-	message, err := h.messages.Get(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"))
+	message, err := h.messages.Get(r.Context(), currentUserID(r), chi.URLParam(r, "id"))
 	if err != nil {
 		failure(w, err)
 		return
@@ -105,7 +116,7 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	message, err := h.messages.Answer(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"), answer)
+	message, err := h.messages.Answer(r.Context(), currentUserID(r), chi.URLParam(r, "id"), answer)
 	if err != nil {
 		failure(w, err)
 		return
@@ -114,7 +125,7 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
-	message, err := h.messages.Cancel(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"))
+	message, err := h.messages.Cancel(r.Context(), currentUserID(r), chi.URLParam(r, "id"))
 	if err != nil {
 		failure(w, err)
 		return
@@ -123,7 +134,7 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
-	messages, err := h.messages.History(r.Context(), domain.DemoUserID, r.URL.Query().Get("session_id"))
+	messages, err := h.messages.History(r.Context(), currentUserID(r), r.URL.Query().Get("session_id"))
 	if err != nil {
 		failure(w, err)
 		return
@@ -166,7 +177,7 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item := domain.Item{Type: req.Type, Title: req.Title, SourceText: req.SourceText, DueDate: req.DueDate, DueAt: req.DueAt, PeriodStart: req.PeriodStart, PeriodEnd: req.PeriodEnd, StartAt: req.StartAt, EndAt: req.EndAt, AllDay: req.AllDay, Participants: req.Participants, Location: req.Location, RemindAt: req.RemindAt}
-	saved, err := h.items.CreateWithOptions(r.Context(), domain.DemoUserID, item, service.SaveOptions{AllowConflicts: req.AllowConflicts})
+	saved, err := h.items.CreateWithOptions(r.Context(), currentUserID(r), item, service.SaveOptions{AllowConflicts: req.AllowConflicts})
 	if err != nil {
 		failure(w, err)
 		return
@@ -176,7 +187,7 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getItem(w http.ResponseWriter, r *http.Request) {
-	item, err := h.items.Get(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"))
+	item, err := h.items.Get(r.Context(), currentUserID(r), chi.URLParam(r, "id"))
 	if err != nil {
 		failure(w, err)
 		return
@@ -218,12 +229,12 @@ func (h *Handler) listItems(w http.ResponseWriter, r *http.Request) {
 		}
 		f.Limit = limit
 	}
-	items, err := h.items.List(r.Context(), domain.DemoUserID, f)
+	items, err := h.items.List(r.Context(), currentUserID(r), f)
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	total, err := h.items.Count(r.Context(), domain.DemoUserID, f)
+	total, err := h.items.Count(r.Context(), currentUserID(r), f)
 	if err != nil {
 		failure(w, err)
 		return
@@ -236,7 +247,7 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	item, err := h.items.Update(r.Context(), domain.DemoUserID, chi.URLParam(r, "id"), patch)
+	item, err := h.items.Update(r.Context(), currentUserID(r), chi.URLParam(r, "id"), patch)
 	if err != nil {
 		failure(w, err)
 		return
@@ -245,7 +256,7 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteItem(w http.ResponseWriter, r *http.Request) {
-	if err := h.items.Delete(r.Context(), domain.DemoUserID, chi.URLParam(r, "id")); err != nil {
+	if err := h.items.Delete(r.Context(), currentUserID(r), chi.URLParam(r, "id")); err != nil {
 		failure(w, err)
 		return
 	}

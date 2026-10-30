@@ -17,6 +17,7 @@ services:
       ML_RESULT_STREAM: ${ML_RESULT_STREAM:-planner:ml:results}
       ML_RESULT_GROUP: ${ML_RESULT_GROUP:-planner-backend}
       MESSAGE_TIMEOUT: ${MESSAGE_TIMEOUT:-15s}
+      SESSION_TTL: ${SESSION_TTL:-168h}
     depends_on:
       postgres:
         condition: service_healthy

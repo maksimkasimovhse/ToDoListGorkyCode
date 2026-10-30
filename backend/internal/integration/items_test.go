@@ -31,6 +31,7 @@ func TestManualItemChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+f.token)
 		resp, err := f.server.Client().Do(req)
 		if err != nil {
 			t.Fatal(err)

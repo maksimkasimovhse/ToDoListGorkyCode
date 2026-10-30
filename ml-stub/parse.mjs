@@ -221,7 +221,7 @@ function target(t, intent) {
     types: terms.types,
     from: null,
     to: null,
-    status: 'open',
+    status: terms.types?.length === 1 && terms.types[0] === 'meeting' ? 'scheduled' : intent === 'complete' ? (/верни|вернуть/.test(t) ? 'done' : 'open') : null,
     all: terms.all,
   };
 }

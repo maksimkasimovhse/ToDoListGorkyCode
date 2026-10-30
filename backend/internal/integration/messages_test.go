@@ -25,11 +25,15 @@ import (
 	"gorky/backend/internal/queue"
 	"gorky/backend/internal/repository"
 	"gorky/backend/internal/repository/postgres"
+	sessionredis "gorky/backend/internal/repository/redis"
 	"gorky/backend/internal/service"
 	httptransport "gorky/backend/internal/transport/http"
 )
 
 type fixture struct {
+	auth              *service.Auth
+	sessions          *sessionredis.Sessions
+	token             string
 	ctx               context.Context
 	db                *sql.DB
 	redis             *redis.Client
@@ -106,14 +110,39 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { bus.Close() })
-	store := postgres.NewMessages(db)
+	sessions := sessionredis.NewSessions(client, prefix+":auth:")
+	auth := service.NewAuth(postgres.NewUsers(db), sessions, time.Hour)
+	login, err := auth.Login(ctx, "demo1", "DemoPass1!", "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _, err := auth.Authenticate(ctx, login.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = domain.WithAuthSession(ctx, session)
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		keys, err := client.Keys(cleanup, prefix+":auth:*").Result()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(keys) > 0 {
+			if err := client.Del(cleanup, keys...).Err(); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	store := postgres.NewMessages(db, sessions)
 	messages := service.NewMessages(store, 30*time.Second)
 	workerCtx, stop := context.WithCancel(ctx)
 	wait := bus.Start(workerCtx, store, messages.HandleResult, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(func() { stop(); wait() })
-	server := httptest.NewServer(httptransport.NewRouter(messages, service.NewItems(postgres.NewItems(db)), filepath.Join("..", "..", "..", "web")))
+	server := httptest.NewServer(httptransport.NewRouter(messages, service.NewItems(postgres.NewItems(db)), auth, filepath.Join("..", "..", "..", "web")))
 	t.Cleanup(server.Close)
-	return &fixture{ctx: ctx, db: db, redis: client, requests: requests, results: results, store: store, messages: messages, server: server, stopWorkers: func() { stop(); wait() }}
+	return &fixture{auth: auth, sessions: sessions, token: login.Token, ctx: ctx, db: db, redis: client, requests: requests, results: results, store: store, messages: messages, server: server, stopWorkers: func() { stop(); wait() }}
 }
 
 func (f *fixture) request(t *testing.T, method, path string, body any, status int) []byte {
@@ -131,6 +160,7 @@ func (f *fixture) request(t *testing.T, method, path string, body any, status in
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+f.token)
 	resp, err := f.server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

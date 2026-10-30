@@ -10,22 +10,28 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func NewRouter(messages *service.Messages, items *service.Items, webDir string) http.Handler {
+func NewRouter(messages *service.Messages, items *service.Items, auth *service.Auth, webDir string) http.Handler {
 	router := chi.NewRouter()
 	router.Get("/healthz", health)
-	handler := &Handler{messages: messages, items: items}
-	router.Post("/api/message", handler.submit)
-	router.Get("/api/messages/{id}", handler.poll)
-	router.Post("/api/messages/{id}/answer", handler.answer)
-	router.Post("/api/messages/{id}/cancel", handler.cancel)
-	router.Get("/api/history", handler.history)
-	router.Post("/api/items", handler.createItem)
-	router.Get("/api/items", handler.listItems)
-	router.Get("/api/items/undated", handler.listItems)
-	router.Get("/api/items/search", handler.listItems)
-	router.Get("/api/items/{id}", handler.getItem)
-	router.Patch("/api/items/{id}", handler.updateItem)
-	router.Delete("/api/items/{id}", handler.deleteItem)
+	handler := &Handler{messages: messages, items: items, auth: auth}
+	router.Post("/api/auth/login", handler.login)
+	router.Group(func(protected chi.Router) {
+		protected.Use(handler.requireAuth)
+		protected.Post("/api/auth/logout", handler.logout)
+		protected.Get("/api/me", handler.me)
+		protected.Post("/api/message", handler.submit)
+		protected.Get("/api/messages/{id}", handler.poll)
+		protected.Post("/api/messages/{id}/answer", handler.answer)
+		protected.Post("/api/messages/{id}/cancel", handler.cancel)
+		protected.Get("/api/history", handler.history)
+		protected.Post("/api/items", handler.createItem)
+		protected.Get("/api/items", handler.listItems)
+		protected.Get("/api/items/undated", handler.listItems)
+		protected.Get("/api/items/search", handler.listItems)
+		protected.Get("/api/items/{id}", handler.getItem)
+		protected.Patch("/api/items/{id}", handler.updateItem)
+		protected.Delete("/api/items/{id}", handler.deleteItem)
+	})
 	files := http.FileServer(http.Dir(webDir))
 	// Неизвестные API-маршруты не должны попадать в обработчик файлов.
 	router.Get("/*", func(w http.ResponseWriter, r *http.Request) {

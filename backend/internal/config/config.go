@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	SessionTTL       time.Duration
 	HTTPAddr         string
 	WebDir           string
 	ShutdownTimeout  time.Duration
@@ -25,7 +26,7 @@ type Config struct {
 // Load читает переменные окружения. Файл .env автоматически не загружается.
 func Load() (Config, error) {
 	cfg := Config{
-		WebDir: "../web", HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,
+		SessionTTL: 7 * 24 * time.Hour, WebDir: "../web", HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		DatabaseTimeout: 10 * time.Second, MigrationTimeout: time.Minute,
 		MigrationsDir:   "migrations",
@@ -70,6 +71,7 @@ func Load() (Config, error) {
 		cfg.ShutdownTimeout = duration
 	}
 	for name, target := range map[string]*time.Duration{
+		"SESSION_TTL":       &cfg.SessionTTL,
 		"DATABASE_TIMEOUT":  &cfg.DatabaseTimeout,
 		"MIGRATION_TIMEOUT": &cfg.MigrationTimeout,
 		"MESSAGE_TIMEOUT":   &cfg.MessageTimeout,
