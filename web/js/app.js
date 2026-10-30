@@ -3,6 +3,7 @@ import { isCancel, parseAnswer, parseConfirmation } from './answer.js';
 import { createChat } from './chat.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
+import { createNotifier } from './notifications.js';
 import { createPlanner } from './planner.js';
 import { createRecent } from './recent.js';
 import { createSettings, stripName } from './settings.js';
@@ -10,6 +11,8 @@ import { configureClock, formatDayMonth, formatTime, now } from './time.js';
 import { createRecognizer, recognitionSupported, speech } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
+// Создаётся в init(), когда известно серверное «сейчас»
+let notifier = null;
 
 const store = {
   get(key) {
@@ -333,6 +336,7 @@ $('selection-clear').addEventListener('click', () => setSelected(null));
 function refreshLists(flash = []) {
   planner.refresh({ flash });
   recent.refresh();
+  if (notifier) notifier.refresh();
 }
 
 async function markDone(item) {
@@ -462,6 +466,25 @@ function onReminder({ item, reply }) {
   say(text);
 }
 
+// За 15 минут и в момент начала. Напоминание в момент срабатывания ведёт себя как событие сервера:
+// реплика в чате, звук и озвучка. Если системное уведомление не показано, сообщаем на странице.
+function onDue(item, kind, text, shown) {
+  if (item.type === 'reminder' && kind === 'now') {
+    onReminder({ item });
+    return;
+  }
+  beep();
+  if (!shown) toast(`${text.title}. ${text.body}`);
+}
+
+function offerNotifications() {
+  if (!notifier.canAsk) return;
+  toast('Показывать уведомления о встречах и напоминаниях?', {
+    label: 'Включить',
+    run: () => notifier.enable(),
+  });
+}
+
 async function showMissedReminders() {
   const since = store.get('last_seen');
   if (!since) return;
@@ -546,7 +569,16 @@ async function init() {
     console.warn('Профиль не загрузился', error);
   }
   await loadHistory();
+  notifier = createNotifier({
+    loadItems: ({ from, to }) => api.getItems({ from, to, types: 'meeting,reminder' }),
+    onDue,
+    toggle: $('notify-toggle'),
+    note: $('notify-note'),
+  });
+  // Разрешение могли поменять в настройках браузера, пока страница была открыта
+  $('settings-btn').addEventListener('click', () => notifier.render());
   refreshLists();
+  offerNotifications();
   await showMissedReminders();
   rememberVisit();
   document.addEventListener('visibilitychange', () => {
