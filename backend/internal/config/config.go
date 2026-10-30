@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	HTTPAddr         string
+	WebDir           string
 	ShutdownTimeout  time.Duration
 	DatabaseURL      string
 	DatabaseTimeout  time.Duration
@@ -24,7 +25,7 @@ type Config struct {
 // Load читает переменные окружения. Файл .env автоматически не загружается.
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,
+		WebDir: "../web", HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		DatabaseTimeout: 10 * time.Second, MigrationTimeout: time.Minute,
 		MigrationsDir:   "migrations",
@@ -36,7 +37,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
 	for name, target := range map[string]*string{
-		"REDIS_URL": &cfg.RedisURL, "ML_REQUEST_STREAM": &cfg.MLRequestStream,
+		"WEB_DIR": &cfg.WebDir, "REDIS_URL": &cfg.RedisURL, "ML_REQUEST_STREAM": &cfg.MLRequestStream,
 		"ML_RESULT_STREAM": &cfg.MLResultStream, "ML_RESULT_GROUP": &cfg.MLResultGroup,
 	} {
 		if value, ok := os.LookupEnv(name); ok {
