@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"gorky/backend/internal/config"
+	"gorky/backend/internal/migration"
 	"gorky/backend/internal/repository/postgres"
 	httptransport "gorky/backend/internal/transport/http"
-	"gorky/backend/migrations"
 )
 
 type App struct {
@@ -46,7 +46,7 @@ func (a *App) Run(ctx context.Context) error {
 	defer db.Close()
 	a.logger.Info("connected to PostgreSQL")
 
-	provider, err := migrations.NewProvider(db)
+	provider, err := migration.NewProvider(db, a.cfg.MigrationsDir)
 	if err != nil {
 		return fmt.Errorf("initialize migrations: %w", err)
 	}

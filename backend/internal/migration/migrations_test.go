@@ -1,15 +1,16 @@
-package migrations_test
+package migration_test
 
 import (
 	"context"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"gorky/backend/internal/migration"
 	"gorky/backend/internal/repository/postgres"
-	"gorky/backend/migrations"
 )
 
 func TestMigrationsPostgres(t *testing.T) {
@@ -47,7 +48,7 @@ func TestMigrationsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	provider, err := migrations.NewProvider(db)
+	provider, err := migration.NewProvider(db, filepath.Join("..", "..", "migrations"))
 	if err != nil {
 		t.Fatal(err)
 	}

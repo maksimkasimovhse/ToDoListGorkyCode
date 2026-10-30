@@ -1,12 +1,16 @@
 // Package http exposes the application's HTTP transport.
 package http
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+)
 
 func NewRouter() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", health)
-	return mux
+	router := chi.NewRouter()
+	router.Get("/healthz", health)
+	return router
 }
 
 // health reports process liveness, not database or model availability.

@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL      string
 	DatabaseTimeout  time.Duration
 	MigrationTimeout time.Duration
+	MigrationsDir    string
 }
 
 // Load reads environment variables. A .env file is not loaded automatically.
@@ -21,9 +22,16 @@ func Load() (Config, error) {
 		HTTPAddr: ":8080", ShutdownTimeout: 10 * time.Second,
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		DatabaseTimeout: 10 * time.Second, MigrationTimeout: time.Minute,
+		MigrationsDir: "migrations",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	if value, ok := os.LookupEnv("MIGRATIONS_DIR"); ok {
+		if value == "" {
+			return Config{}, fmt.Errorf("MIGRATIONS_DIR must not be empty")
+		}
+		cfg.MigrationsDir = value
 	}
 	if value, ok := os.LookupEnv("HTTP_ADDR"); ok {
 		cfg.HTTPAddr = value

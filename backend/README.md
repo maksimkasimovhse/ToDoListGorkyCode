@@ -1,6 +1,6 @@
 # Бэкенд голосового ассистента
 
-Go 1.26, PostgreSQL 17, драйвер pgx через database/sql, SQL-миграции goose.
+Go 1.26, HTTP-роутер chi, PostgreSQL 17, драйвер pgx через database/sql, SQL-миграции goose.
 Пока доступны инфраструктура и GET /healthz. API записей и LLM ещё не подключены.
 
 ## Локальный запуск
@@ -32,6 +32,7 @@ go run ./cmd/api
 | DATABASE_URL | обязательна | URL PostgreSQL |
 | DATABASE_TIMEOUT | 10s | Тайм-аут подключения и ping |
 | MIGRATION_TIMEOUT | 1m | Тайм-аут миграций, включая ожидание блокировки |
+| MIGRATIONS_DIR | migrations | Папка SQL-миграций относительно рабочей директории |
 | HTTP_ADDR | :8080 | Адрес HTTP-сервера |
 | SHUTDOWN_TIMEOUT | 10s | Ожидание завершения HTTP-запросов |
 
@@ -40,7 +41,7 @@ go run ./cmd/api
 
 ## Миграции
 
-Файлы migrations/*.sql встраиваются в бинарник через go:embed. При запуске применяются
+SQL-файлы читаются с диска из MIGRATIONS_DIR. При запуске применяются
 автоматически, уже применённые версии пропускаются. PostgreSQL advisory lock защищает
 от одновременного выполнения миграций несколькими экземплярами приложения.
 
@@ -56,7 +57,8 @@ go run ./cmd/migrate down
 
 Новые файлы: 00002_description.sql, 00003_description.sql и т. д., с секциями
 `-- +goose Up` и `-- +goose Down`. Применённые файлы не редактируйте: добавляйте новую миграцию.
-После изменения файлов пересоберите бинарник.
+При запуске из другой директории укажите MIGRATIONS_DIR явно. При развёртывании копируйте
+папку SQL-миграций вместе с бинарником. Пересборка для добавления SQL-файлов не нужна.
 
 Первая миграция создаёт items, ограничения по типам/срокам/статусам и индексы.
 user_id пока UUID без внешнего ключа: пользователи появятся вместе с соответствующим сценарием.
@@ -74,7 +76,8 @@ internal/repository/         интерфейсы хранилища
 internal/repository/postgres/ подключение PostgreSQL
 internal/service/            будущие сценарии
 internal/transport/http/     роутер и обработчики
-migrations/                  SQL-файлы и провайдер goose
+internal/migration/          провайдер goose и интеграционный тест
+migrations/                  только SQL-файлы
 compose.yaml                 локальная БД
 ```
 
@@ -90,7 +93,7 @@ go build -o bin/api.exe ./cmd/api
 
 ```powershell
 $env:TEST_DATABASE_URL = $env:DATABASE_URL
-go test ./migrations -v -count=1
+go test ./internal/migration -v -count=1
 ```
 
 Проверяются применение, повторный запуск, ограничения записей, откат и повторное применение.

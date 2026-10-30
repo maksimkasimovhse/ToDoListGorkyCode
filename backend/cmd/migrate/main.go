@@ -9,8 +9,8 @@ import (
 	"syscall"
 
 	"gorky/backend/internal/config"
+	"gorky/backend/internal/migration"
 	"gorky/backend/internal/repository/postgres"
-	"gorky/backend/migrations"
 )
 
 func main() {
@@ -37,7 +37,7 @@ func run() error {
 		return err
 	}
 	defer db.Close()
-	provider, err := migrations.NewProvider(db)
+	provider, err := migration.NewProvider(db, cfg.MigrationsDir)
 	if err != nil {
 		return err
 	}
