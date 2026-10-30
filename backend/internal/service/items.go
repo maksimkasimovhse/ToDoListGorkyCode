@@ -62,9 +62,18 @@ func ValidateItem(item domain.Item) error {
 	return nil
 }
 
-type Items struct{ repo repository.ItemRepository }
+type Items struct {
+	repo     repository.ItemRepository
+	embedder Embedder
+}
 
-func NewItems(repo repository.ItemRepository) *Items { return &Items{repo: repo} }
+func NewItems(repo repository.ItemRepository, embedders ...Embedder) *Items {
+	items := &Items{repo: repo}
+	if len(embedders) > 0 {
+		items.embedder = embedders[0]
+	}
+	return items
+}
 
 func (s *Items) Create(ctx context.Context, user string, item domain.Item) (domain.Item, error) {
 	return s.CreateWithOptions(ctx, user, item, SaveOptions{})

@@ -1,5 +1,6 @@
 .git
 .env
+*.xlsx
 .env.*
 **/bin
 **/*.exe

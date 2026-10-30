@@ -21,6 +21,7 @@ type Config struct {
 	MLResultStream   string
 	MLResultGroup    string
 	MessageTimeout   time.Duration
+	EmbeddingsURL    string
 }
 
 // Load читает переменные окружения. Файл .env автоматически не загружается.
@@ -33,6 +34,7 @@ func Load() (Config, error) {
 		RedisURL:        "redis://localhost:6379/0",
 		MLRequestStream: "planner:ml:requests", MLResultStream: "planner:ml:results",
 		MLResultGroup: "planner-backend", MessageTimeout: 15 * time.Second,
+		EmbeddingsURL: os.Getenv("EMBEDDINGS_URL"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

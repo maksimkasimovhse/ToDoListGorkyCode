@@ -233,17 +233,28 @@ func (h *Handler) listItems(w http.ResponseWriter, r *http.Request) {
 		}
 		f.Limit = limit
 	}
-	items, err := h.items.List(r.Context(), currentUserID(r), f)
+	search := strings.HasSuffix(r.URL.Path, "/search")
+	semantic := false
+	var items []domain.Item
+	var err error
+	if search {
+		items, semantic, err = h.items.Search(r.Context(), currentUserID(r), f)
+	} else {
+		items, err = h.items.List(r.Context(), currentUserID(r), f)
+	}
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	total, err := h.items.Count(r.Context(), currentUserID(r), f)
-	if err != nil {
-		failure(w, err)
-		return
+	total := len(items)
+	if !search {
+		total, err = h.items.Count(r.Context(), currentUserID(r), f)
+		if err != nil {
+			failure(w, err)
+			return
+		}
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "total": total, "overdue": []domain.Item{}, "semantic": false})
+	writeJSON(w, 200, map[string]any{"items": items, "total": total, "overdue": []domain.Item{}, "semantic": semantic})
 }
 func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 	var patch map[string]json.RawMessage

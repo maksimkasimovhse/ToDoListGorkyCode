@@ -16,7 +16,8 @@ services:
       ML_REQUEST_STREAM: ${ML_REQUEST_STREAM:-planner:ml:requests}
       ML_RESULT_STREAM: ${ML_RESULT_STREAM:-planner:ml:results}
       ML_RESULT_GROUP: ${ML_RESULT_GROUP:-planner-backend}
-      MESSAGE_TIMEOUT: ${MESSAGE_TIMEOUT:-15s}
+      MESSAGE_TIMEOUT: ${MESSAGE_TIMEOUT:-90s}
+      EMBEDDINGS_URL: http://ml-worker:8090
       SESSION_TTL: ${SESSION_TTL:-168h}
     depends_on:
       postgres:
@@ -25,6 +26,31 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  ml-worker:
+    build:
+      context: .
+      dockerfile: ml-worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ML_REQUEST_STREAM: ${ML_REQUEST_STREAM:-planner:ml:requests}
+      ML_RESULT_STREAM: ${ML_RESULT_STREAM:-planner:ml:results}
+      ML_REQUEST_GROUP: ${ML_REQUEST_GROUP:-planner-ml}
+      PLANNER_PROVIDER: gigachat
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_ACCESS_TOKEN: ${GIGACHAT_ACCESS_TOKEN:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings-2}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 15

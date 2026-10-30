@@ -78,8 +78,12 @@ func (a *App) Run(ctx context.Context) error {
 	defer sessions.Close()
 	auth := service.NewAuth(postgres.NewUsers(db), sessions, a.cfg.SessionTTL)
 	store := postgres.NewMessages(db, sessions)
-	messages := service.NewMessages(store, a.cfg.MessageTimeout)
-	items := service.NewItems(postgres.NewItems(db))
+	var embedder service.Embedder
+	if a.cfg.EmbeddingsURL != "" {
+		embedder = service.NewHTTPEmbedder(a.cfg.EmbeddingsURL)
+	}
+	messages := service.NewMessages(store, a.cfg.MessageTimeout, embedder)
+	items := service.NewItems(postgres.NewItems(db), embedder)
 	a.server.Handler = httptransport.NewRouter(messages, items, auth, a.cfg.WebDir)
 	workerCtx, cancelWorkers := context.WithCancel(ctx)
 	waitWorkers := bus.Start(workerCtx, store, messages.HandleResult, a.logger)

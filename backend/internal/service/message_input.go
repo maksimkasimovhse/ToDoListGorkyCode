@@ -113,7 +113,7 @@ func (s *Messages) Answer(ctx context.Context, user, id string, answer domain.Me
 		}
 		m.ModelRequest.Now = time.Now().In(m.ModelRequest.Now.Location())
 		payload, _ := json.Marshal(map[string]any{"value": value})
-		return execute(ctx, items, m, state, domain.ModelResult{Status: "ready", Actions: []domain.Action{{Intent: "answer", Params: payload}}})
+		return execute(ctx, items, m, state, domain.ModelResult{Status: "ready", Actions: []domain.Action{{Intent: "answer", Params: payload}}}, s.embedder)
 	})
 }
 
