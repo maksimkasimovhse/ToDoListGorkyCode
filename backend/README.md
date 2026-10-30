@@ -1,15 +1,17 @@
 # Бэкенд голосового ассистента
 
-Go 1.26, HTTP-роутер chi, PostgreSQL 17, драйвер pgx через database/sql, SQL-миграции goose.
-Пока доступны инфраструктура и GET /healthz. API записей и LLM ещё не подключены.
+Go 1.26, HTTP-роутер chi, PostgreSQL 17, драйвер pgx через database/sql, SQL-миграции goose,
+Redis Streams для обмена с ML. Реализованы ручное создание/чтение записей и асинхронные
+сообщения с polling результата. Сам ML-модуль не входит в Go-приложение.
 
 ## Локальный запуск
 
 Из папки backend, с запущенным Docker Desktop:
 
 ```powershell
-docker compose up -d --wait postgres
+docker compose up -d --wait postgres redis
 $env:DATABASE_URL = 'postgres://gorky:gorky@localhost:55432/gorky?sslmode=disable'
+$env:REDIS_URL = 'redis://localhost:6379/0'
 go run ./cmd/api
 ```
 
@@ -17,11 +19,13 @@ go run ./cmd/api
 Это проверка жизни процесса, а не текущей доступности БД.
 Пароль Compose предназначен только для локальной разработки. БД слушает localhost:55432;
 порт можно изменить переменной POSTGRES_PORT для Compose и соответствующим DATABASE_URL.
-Данные сохраняются в Docker volume.
+Redis доступен на localhost:6379; порт настраивается через REDIS_PORT и REDIS_URL.
+Данные обоих сервисов сохраняются в Docker volumes, у Redis включён AOF.
 
 В internal/app приложение открывает пул, проверяет соединение, применяет миграции и затем
-запускает HTTP-сервер. При ошибке подключения или миграции запуск прерывается.
-При Ctrl+C сервер завершает активные запросы, после чего закрывается пул БД.
+подключает Redis, запускает фоновые обработчики и HTTP-сервер. При ошибке подключения
+или миграции запуск прерывается. При Ctrl+C сервер завершает активные запросы,
+останавливаются фоновые обработчики, закрываются Redis и пул БД.
 
 ## Конфигурация
 
@@ -33,6 +37,11 @@ go run ./cmd/api
 | DATABASE_TIMEOUT | 10s | Тайм-аут подключения и ping |
 | MIGRATION_TIMEOUT | 1m | Тайм-аут миграций, включая ожидание блокировки |
 | MIGRATIONS_DIR | migrations | Папка SQL-миграций относительно рабочей директории |
+| REDIS_URL | redis://localhost:6379/0 | Подключение Redis |
+| ML_REQUEST_STREAM | planner:ml:requests | Задания модели |
+| ML_RESULT_STREAM | planner:ml:results | Результаты модели |
+| ML_RESULT_GROUP | planner-backend | Группа обработчиков результатов |
+| MESSAGE_TIMEOUT | 15s | Общий срок обработки сообщения |
 | HTTP_ADDR | :8080 | Адрес HTTP-сервера |
 | SHUTDOWN_TIMEOUT | 10s | Ожидание завершения HTTP-запросов |
 
@@ -61,8 +70,27 @@ go run ./cmd/migrate down
 папку SQL-миграций вместе с бинарником. Пересборка для добавления SQL-файлов не нужна.
 
 Первая миграция создаёт items, ограничения по типам/срокам/статусам и индексы.
-user_id пока UUID без внешнего ключа: пользователи появятся вместе с соответствующим сценарием.
-Реализация методов репозитория ещё не добавлена.
+Вторая — conversations, messages и message_outbox. user_id пока UUID без внешнего ключа:
+пользователи появятся вместе с соответствующим сценарием. Все HTTP-запросы сейчас принадлежат
+одному демопользователю.
+
+## API и очередь
+
+- POST /api/items — ручное создание, ответ 201 с записью.
+- GET /api/items — список; from/to в RFC3339, types через запятую, status, timezone, limit (1–100).
+- GET /api/items/undated — задачи без срока.
+- GET /api/items/search?q=... — поиск по словам.
+- GET /api/items/{id} — одна запись.
+- POST /api/message — приём сообщения, ответ 202 с message_id.
+- GET /api/messages/{id} — polling статуса и ответа.
+- GET /api/history?session_id=... — история и сообщения, обработка которых ещё идёт.
+
+При ручном создании передаются поля записи без id, user_id, статуса и служебных дат.
+Статус присваивает Go. У встречи без end_at длительность по умолчанию 60 минут.
+
+Полный формат обмена, уточнения, правила повторов и инструкция для ML:
+[асинхронный контракт](docs/async-contract.md).
+Без ML-обработчика текстовые сообщения закончатся по тайм-ауту; ручной API работает независимо.
 
 ## Структура
 
@@ -74,11 +102,14 @@ internal/config/             настройки окружения
 internal/domain/             сущности предметной области
 internal/repository/         интерфейсы хранилища
 internal/repository/postgres/ подключение PostgreSQL
-internal/service/            будущие сценарии
+internal/service/            сценарии записей, сообщений и обработки команд
+internal/queue/              Redis Streams и фоновые обработчики
+internal/integration/        сквозные тесты HTTP, PostgreSQL и Redis
 internal/transport/http/     роутер и обработчики
 internal/migration/          провайдер goose и интеграционный тест
 migrations/                  только SQL-файлы
-compose.yaml                 локальная БД
+docs/                        контракт для фронта и ML
+compose.yaml                 локальные PostgreSQL и Redis
 ```
 
 ## Проверка
@@ -98,3 +129,15 @@ go test ./internal/migration -v -count=1
 
 Проверяются применение, повторный запуск, ограничения записей, откат и повторное применение.
 Без TEST_DATABASE_URL тест пропускается. Нужна URL-форма подключения и право создавать схемы.
+
+Сквозная проверка без реальной модели (тест публикует подготовленные ответы ML):
+
+```powershell
+$env:TEST_DATABASE_URL = $env:DATABASE_URL
+$env:TEST_REDIS_URL = $env:REDIS_URL
+go test ./internal/integration -v -count=1
+```
+
+Тест использует отдельные схему PostgreSQL и Redis Streams, не очищая рабочие данные.
+Проверяются polling, идемпотентность, занятый диалог, уточнения, подтверждение дубликата,
+повтор неверного ответа модели, поздний результат, атомарность и повторная публикация outbox.

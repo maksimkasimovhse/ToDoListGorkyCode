@@ -17,12 +17,19 @@ type ItemRepository interface {
 	Create(ctx context.Context, item domain.Item) (domain.Item, error)
 	GetByID(ctx context.Context, userID, itemID string) (domain.Item, error)
 	List(ctx context.Context, userID string, filter ItemFilter) ([]domain.Item, error)
+	Search(ctx context.Context, userID string, filter ItemFilter) ([]domain.Item, error)
+	Count(ctx context.Context, userID string, filter ItemFilter) (int, error)
 }
 
 type ItemFilter struct {
 	// Граница From включается, To не включается. nil означает отсутствие границы.
-	From   *time.Time
-	To     *time.Time
-	Types  []domain.ItemType
-	Status *domain.ItemStatus
+	From        *time.Time
+	To          *time.Time
+	Types       []domain.ItemType
+	Status      *domain.ItemStatus
+	Timezone    string
+	Query       string
+	Participant string
+	Limit       int
+	Undated     bool
 }
