@@ -125,3 +125,53 @@ func (r *Items) find(ctx context.Context, userID string, f repository.ItemFilter
 	}
 	return items, total, rows.Err()
 }
+
+// Update проверяет версию записи, чтобы не потерять параллельные изменения.
+func (r *Items) Update(ctx context.Context, item domain.Item, version time.Time) (domain.Item, error) {
+	if item.Participants == nil {
+		item.Participants = []string{}
+	}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		return domain.Item{}, err
+	}
+	var raw []byte
+	err = r.db.QueryRowContext(ctx, `UPDATE items AS i SET
+ title=p.title, source_text=p.source_text, due_date=p.due_date, due_at=p.due_at,
+ period_start=p.period_start, period_end=p.period_end, start_at=p.start_at, end_at=p.end_at,
+ all_day=p.all_day, participants=p.participants, location=p.location, remind_at=p.remind_at,
+ status=p.status, completed_at=p.completed_at,
+ updated_at=GREATEST(clock_timestamp(), i.updated_at + interval '1 microsecond')
+ FROM jsonb_populate_record(NULL::items, $1::jsonb) AS p
+ WHERE i.id=$2 AND i.user_id=$3 AND i.deleted_at IS NULL AND i.updated_at=$4
+ RETURNING to_jsonb(i)`, string(payload), item.ID, item.UserID, version).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, getErr := r.GetByID(ctx, item.UserID, item.ID); getErr != nil {
+			return domain.Item{}, getErr
+		}
+		return domain.Item{}, repository.ErrConflict
+	}
+	if err != nil {
+		return domain.Item{}, err
+	}
+	err = json.Unmarshal(raw, &item)
+	return item, err
+}
+
+// Delete выполняет мягкое удаление с проверкой владельца.
+func (r *Items) Delete(ctx context.Context, user, id string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE items SET deleted_at=clock_timestamp(),
+ updated_at=GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+ WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL`, id, user)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}

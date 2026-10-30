@@ -111,7 +111,7 @@ func setup(t *testing.T) *fixture {
 	workerCtx, stop := context.WithCancel(ctx)
 	wait := bus.Start(workerCtx, store, messages.HandleResult, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(func() { stop(); wait() })
-	server := httptest.NewServer(httptransport.NewRouter(messages, service.NewItems(postgres.NewItems(db))))
+	server := httptest.NewServer(httptransport.NewRouter(messages, service.NewItems(postgres.NewItems(db)), filepath.Join("..", "..", "..", "web")))
 	t.Cleanup(server.Close)
 	return &fixture{ctx: ctx, db: db, redis: client, requests: requests, results: results, store: store, messages: messages, server: server, stopWorkers: func() { stop(); wait() }}
 }
