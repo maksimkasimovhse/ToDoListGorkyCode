@@ -1,6 +1,8 @@
 import * as api from './api.js';
 import { isCancel, parseAnswer, parseConfirmation } from './answer.js';
 import { createChat } from './chat.js';
+import { createItemForm } from './item-form.js';
+import { hasDate } from './items.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
 import { createPlanner } from './planner.js';
@@ -77,6 +79,7 @@ const planner = createPlanner({
   body: $('planner-body'),
   tabs: $('planner-tabs'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
   onToggleDone: markDone,
   onDelete: removeItem,
 });
@@ -87,6 +90,7 @@ const recent = createRecent({
   search: $('recent-search'),
   filters: $('recent-filters'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
 });
 
 const recognizer = createRecognizer({
@@ -268,7 +272,6 @@ const settings = createSettings({
   note: $('settings-note'),
   onChange: ({ name }) => {
     $('assistant-name').textContent = name;
-    document.title = `${name} — голосовой ассистент`;
   },
 });
 
@@ -349,18 +352,73 @@ async function markDone(item) {
   }
 }
 
-async function removeItem(item) {
+async function reopenItem(item) {
   try {
-    const result = await api.deleteItem(item.id);
-    if (state.selected && state.selected.id === item.id) setSelected(null);
-    refreshLists();
-    const token = result && result.undo_token;
-    toast(`Удалено: ${item.title}`, token ? { label: 'Отменить', run: () => api.undo(token).then(() => refreshLists([item.id])) } : null);
+    await api.patchItem(item.id, { status: 'open' });
+    refreshLists([item.id]);
+    toast(`Вернул в работу: ${item.title}`);
   } catch (error) {
     console.warn(error);
-    toast(error.code === 'not_implemented' ? 'Удаление пока не поддерживается бэкендом.' : 'Не получилось удалить. Попробуйте ещё раз.');
+    toast('Не получилось сохранить. Попробуйте ещё раз.');
   }
 }
+
+const DELETED = { task: 'Задача удалена', reminder: 'Напоминание удалено', meeting: 'Встреча удалена' };
+
+async function removeItem(item) {
+  try {
+    await api.deleteItem(item.id);
+    if (state.selected && state.selected.id === item.id) setSelected(null);
+    refreshLists();
+    toast(`${DELETED[item.type]}: ${item.title}`, {
+      label: 'Вернуть',
+      run: () => restoreItem(item),
+    });
+  } catch (error) {
+    console.warn(error);
+    refreshLists();
+    toast('Не получилось удалить. Попробуйте ещё раз.');
+  }
+}
+
+// Поля, по которым удалённая запись создаётся заново: бэкенд не умеет снимать отметку удаления
+const RESTORE_FIELDS = ['type', 'title', 'source_text', 'due_date', 'due_at', 'period_start', 'period_end', 'start_at', 'end_at', 'all_day', 'participants', 'location', 'remind_at'];
+
+/** «Вернуть» после удаления: та же запись с новым id; пересечения встреч уже были разрешены раньше */
+async function restoreItem(item) {
+  const fields = Object.fromEntries(RESTORE_FIELDS.map((key) => [key, item[key]]));
+  const restored = await api.createItem(fields, { allowConflicts: true });
+  if (item.status === 'done') await api.patchItem(restored.id, { status: 'done' });
+  refreshLists([restored.id]);
+  toast(`Вернул: ${item.title}`);
+}
+
+// ---------- Ручное добавление записи ----------
+
+const itemForm = createItemForm({
+  dialog: $('item-dialog'),
+  onUpdated: (item) => {
+    refreshLists([item.id]);
+    toast(`Сохранено: ${item.title}`);
+  },
+  onDelete: removeItem,
+  onDone: markDone,
+  onReopen: reopenItem,
+  onCreated: (item) => {
+    // Задача без срока видна только во «Ближайших» — показываем её там
+    if (hasDate(item)) refreshLists([item.id]);
+    else {
+      planner.showTab('upcoming', { flash: [item.id] });
+      recent.refresh();
+    }
+    toast(`Добавлено: ${item.title}`, {
+      label: 'Отменить',
+      run: () => api.deleteItem(item.id).then(() => refreshLists()),
+    });
+  },
+});
+
+$('add-item').addEventListener('click', () => itemForm.open({ date: planner.selectedDay() }));
 
 async function undoAction(token, button) {
   button.disabled = true;
@@ -388,7 +446,8 @@ function toast(text, action = null) {
     node.append(button);
   }
   $('toasts').append(node);
-  setTimeout(() => node.remove(), 6000);
+  // С кнопкой «Вернуть» или «Отменить» тост живёт дольше, чтобы успеть нажать
+  setTimeout(() => node.remove(), action ? 8000 : 5000);
 }
 
 // ---------- Сессия и история ----------

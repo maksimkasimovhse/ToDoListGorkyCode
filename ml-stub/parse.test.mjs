@@ -148,3 +148,8 @@ test('напомни про встречу — встреча с напомин�
   assert.equal(intent, 'create_meeting');
   assert.equal(params.remind_before_min, 15);
 });
+
+test('«создай напоминание …» — служебные слова не попадают в название', () => {
+  assert.equal(first('Создай напоминание чтобы сходить к бабушке завтра в 12').params.title, 'сходить к бабушке');
+  assert.equal(first('Создай напоминание на 16:33 съесть пирожное').params.title, 'съесть пирожное');
+});

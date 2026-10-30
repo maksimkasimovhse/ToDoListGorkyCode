@@ -4,10 +4,12 @@ import { CONFIG } from './config.js';
 import { getTimeZone } from './time.js';
 
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  /** details — тело ошибки бэкенда целиком, например conflicts у 409 meeting_conflict */
+  constructor(status, code, message, details = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -136,7 +138,7 @@ async function httpRequest(method, path, params, body, timeoutMs) {
   if ([502, 503, 504].includes(response.status) && !error) {
     throw new RouteUnavailable(response.status, 'backend_unavailable', { permanent: false });
   }
-  throw new ApiError(response.status, error ? error.code : `http_${response.status}`, error ? error.message : 'Ошибка сервера');
+  throw new ApiError(response.status, error ? error.code : `http_${response.status}`, error ? error.message : 'Ошибка сервера', error);
 }
 
 const POLL_INTERVAL_MS = 1000;
@@ -234,8 +236,18 @@ export const getRecentItems = ({ types, limit = 20 } = {}) =>
 export const getUndatedItems = (types) => request('GET', '/api/items/undated', { query: { types, timezone: getTimeZone() } });
 export const searchItems = (q, limit = 20) => request('GET', '/api/items/search', { query: { q, limit, timezone: getTimeZone() } });
 export const getItem = (id) => request('GET', `/api/items/${encodeURIComponent(id)}`);
-export const patchItem = (id, changes) =>
-  request('PATCH', `/api/items/${encodeURIComponent(id)}`, { body: changes, missing: 'error' });
+/**
+ * Ручное создание записи. Пересечение встреч — ошибка 409 meeting_conflict с details.conflicts;
+ * allowConflicts: true сохраняет запись несмотря на пересечения (backend/docs/meeting-conflicts.md).
+ */
+export const createItem = (fields, { allowConflicts = false } = {}) =>
+  request('POST', '/api/items', { body: { ...fields, allow_conflicts: allowConflicts }, missing: 'error' });
+
+export const patchItem = (id, changes, { allowConflicts = false } = {}) =>
+  request('PATCH', `/api/items/${encodeURIComponent(id)}`, {
+    body: allowConflicts ? { ...changes, allow_conflicts: true } : changes,
+    missing: 'error',
+  });
 export const deleteItem = (id) => request('DELETE', `/api/items/${encodeURIComponent(id)}`, { missing: 'error' });
 export const undo = (undoToken) => request('POST', '/api/undo', { body: { undo_token: undoToken }, missing: 'error' });
 

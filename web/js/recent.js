@@ -3,7 +3,7 @@ import * as api from './api.js';
 import { el } from './dom.js';
 import { TYPES, shortWhen } from './items.js';
 
-export function createRecent({ list, heading, search, filters, onSelect }) {
+export function createRecent({ list, heading, search, filters, onSelect, onOpen }) {
   const state = { query: '', types: new Set(), selectedId: null, items: [] };
   let requestSeq = 0;
   let debounce = null;
@@ -65,6 +65,7 @@ export function createRecent({ list, heading, search, filters, onSelect }) {
       row.append(el('span', `dot dot--${item.type}`), el('span', 'recent__title', item.title), el('span', 'recent__date', shortWhen(item)));
       row.title = item.title;
       row.addEventListener('click', () => onSelect(item));
+      row.addEventListener('dblclick', () => onOpen(item));
       row.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
