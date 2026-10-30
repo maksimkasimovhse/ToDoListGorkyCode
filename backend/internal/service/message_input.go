@@ -48,11 +48,14 @@ func (s *Messages) Answer(ctx context.Context, user, id string, answer domain.Me
 			m.ModelRequest.Now = time.Now().In(m.ModelRequest.Now.Location())
 			var reply domain.Reply
 			var next domain.DialogueState
-			err := items.WithUserLock(ctx, user, func(locked repository.ItemRepository) error {
+			token, err := items.WithUndo(ctx, user, func(locked repository.ItemRepository) error {
 				var err error
 				reply, next, err = continueMutation(ctx, locked, m, state, answer)
 				return err
 			})
+			if err == nil {
+				reply.UndoToken = token
+			}
 			return reply, next, err
 		}
 		if answer.OptionID != nil || answer.Text != nil {

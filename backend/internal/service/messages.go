@@ -136,3 +136,10 @@ func validResult(r domain.ModelResult) bool {
 	}
 	return true
 }
+
+func (s *Messages) Reset(ctx context.Context, user, session string) error {
+	if strings.TrimSpace(session) == "" || len(session) > 128 {
+		return invalid("нужен session_id длиной до 128 байт")
+	}
+	return s.repo.Reset(ctx, user, session)
+}

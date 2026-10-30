@@ -73,7 +73,7 @@ func TestManualMeetingConflicts(t *testing.T) {
 	f.request(t, "PATCH", path, map[string]any{"status": "cancelled"}, 200)
 	// Отменённая встреча не мешает создать новую в её свободной части интервала.
 	free := create("свободно", "2030-01-02T11:00:00+03:00", "2030-01-02T12:00:00+03:00", false, 201)
-	f.request(t, "DELETE", "/api/items/"+free.ID, nil, 204)
+	f.request(t, "DELETE", "/api/items/"+free.ID, nil, 200)
 	create("после удаления", "2030-01-02T11:00:00+03:00", "2030-01-02T12:00:00+03:00", false, 201)
 	create("явное подтверждение", "2030-01-02T10:00:00+03:00", "2030-01-02T11:00:00+03:00", true, 201)
 	// Встречи другого пользователя не раскрываются и не блокируют расписание.

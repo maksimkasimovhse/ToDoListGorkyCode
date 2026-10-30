@@ -19,7 +19,10 @@ type querier interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-type Items struct{ db querier }
+type Items struct {
+	db      querier
+	changes *[]domain.ItemChange
+}
 
 func NewItems(db *sql.DB) *Items { return &Items{db: db} }
 
@@ -46,6 +49,9 @@ func (r *Items) Create(ctx context.Context, item domain.Item) (domain.Item, erro
 		return domain.Item{}, err
 	}
 	err = json.Unmarshal(raw, &item)
+	if err == nil {
+		r.track(nil, item)
+	}
 	return item, err
 }
 
@@ -128,6 +134,14 @@ func (r *Items) find(ctx context.Context, userID string, f repository.ItemFilter
 
 // Update проверяет версию записи, чтобы не потерять параллельные изменения.
 func (r *Items) Update(ctx context.Context, item domain.Item, version time.Time) (domain.Item, error) {
+	var before *domain.Item
+	if r.changes != nil {
+		snapshot, err := r.GetByID(ctx, item.UserID, item.ID)
+		if err != nil {
+			return domain.Item{}, err
+		}
+		before = &snapshot
+	}
 	if item.Participants == nil {
 		item.Participants = []string{}
 	}
@@ -155,23 +169,36 @@ func (r *Items) Update(ctx context.Context, item domain.Item, version time.Time)
 		return domain.Item{}, err
 	}
 	err = json.Unmarshal(raw, &item)
+	if err == nil {
+		r.track(before, item)
+	}
 	return item, err
 }
 
 // Delete выполняет мягкое удаление с проверкой владельца.
 func (r *Items) Delete(ctx context.Context, user, id string) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE items SET deleted_at=clock_timestamp(),
- updated_at=GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
- WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL`, id, user)
-	if err != nil {
-		return err
+	var before *domain.Item
+	if r.changes != nil {
+		snapshot, err := r.GetByID(ctx, user, id)
+		if err != nil {
+			return err
+		}
+		before = &snapshot
 	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if count == 0 {
+	var raw []byte
+	err := r.db.QueryRowContext(ctx, `UPDATE items SET deleted_at=clock_timestamp(),
+ updated_at=GREATEST(clock_timestamp(),updated_at+interval '1 microsecond')
+ WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL RETURNING to_jsonb(items)`, id, user).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
 		return repository.ErrNotFound
 	}
+	if err != nil {
+		return err
+	}
+	var item domain.Item
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return err
+	}
+	r.track(before, item)
 	return nil
 }

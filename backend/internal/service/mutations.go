@@ -231,7 +231,7 @@ func prepareMutation(ctx context.Context, repo repository.ItemRepository, m doma
 	}
 	pending := state.Draft.Mutation
 	if state.Draft.Intent == "delete" {
-		return confirmMutation(state, "delete", "Удалить запись «"+pending.Selected.Title+"»?", nil), state, nil
+		return confirmMutation(&state, "delete", "Удалить запись «"+pending.Selected.Title+"»?", nil), state, nil
 	}
 	if state.Draft.Intent == "complete" {
 		if pending.Selected.Type == domain.ItemMeeting {
@@ -296,7 +296,7 @@ func applyMutation(ctx context.Context, repo repository.ItemRepository, m domain
 			}
 			if !allKnown {
 				pending.ConflictKeys = keys
-				return confirmMutation(state, "conflict", conflictQuestion(conflict.Conflicts, m.ModelRequest.Timezone), conflict.Conflicts), state, nil
+				return confirmMutation(&state, "conflict", conflictQuestion(conflict.Conflicts, m.ModelRequest.Timezone), conflict.Conflicts), state, nil
 			}
 			patch := map[string]json.RawMessage{}
 			for k, v := range pending.Patch {
@@ -332,7 +332,7 @@ func applyMutation(ctx context.Context, repo repository.ItemRepository, m domain
 	return reply, state, nil
 }
 
-func confirmMutation(state domain.DialogueState, stage, text string, conflicts []domain.Item) domain.Reply {
+func confirmMutation(state *domain.DialogueState, stage, text string, conflicts []domain.Item) domain.Reply {
 	pending := state.Draft.Mutation
 	pending.Stage = stage
 	expects := "yes_no"

@@ -65,6 +65,10 @@ func failure(w http.ResponseWriter, err error) {
 		status, code, message = 429, "too_many_attempts", "Слишком много попыток входа. Повторите через минуту."
 	case errors.Is(err, service.ErrInvalid):
 		status, code, message = 400, "validation", err.Error()
+	case errors.Is(err, repository.ErrUndoExpired):
+		status, code, message = 410, "undo_expired", "Срок отмены действия истёк."
+	case errors.Is(err, repository.ErrUndoConflict):
+		status, code, message = 409, "undo_conflict", "Запись уже изменена после действия. Откат не выполнен."
 	case errors.Is(err, repository.ErrConflict):
 		status, code, message = 409, "item_conflict", "Запись изменилась. Обновите её и повторите запрос."
 	case errors.Is(err, repository.ErrNotFound):
@@ -256,9 +260,10 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteItem(w http.ResponseWriter, r *http.Request) {
-	if err := h.items.Delete(r.Context(), currentUserID(r), chi.URLParam(r, "id")); err != nil {
+	token, err := h.items.DeleteWithUndo(r.Context(), currentUserID(r), chi.URLParam(r, "id"))
+	if err != nil {
 		failure(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{"undo_token": token})
 }

@@ -57,7 +57,7 @@ func TestAuthenticationRequiredAndLogin(t *testing.T) {
 	f := setup(t)
 	client := f.server.Client()
 	for _, route := range []struct{ method, path string }{
-		{"GET", "/api/me"}, {"GET", "/api/items"}, {"GET", "/api/items/search?q=abc"}, {"POST", "/api/items"},
+		{"POST", "/api/session/reset"}, {"POST", "/api/undo"}, {"GET", "/api/me"}, {"GET", "/api/items"}, {"GET", "/api/items/search?q=abc"}, {"POST", "/api/items"},
 		{"GET", "/api/items/00000000-0000-0000-0000-000000000001"}, {"PATCH", "/api/items/00000000-0000-0000-0000-000000000001"}, {"DELETE", "/api/items/00000000-0000-0000-0000-000000000001"},
 		{"POST", "/api/message"}, {"GET", "/api/history?session_id=shared"}, {"GET", "/api/messages/00000000-0000-0000-0000-000000000001"},
 		{"POST", "/api/messages/00000000-0000-0000-0000-000000000001/answer"}, {"POST", "/api/messages/00000000-0000-0000-0000-000000000001/cancel"}, {"POST", "/api/auth/logout"},

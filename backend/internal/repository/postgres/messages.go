@@ -278,7 +278,9 @@ func (r *Messages) Expire(ctx context.Context) error {
 }
 
 func (r *Messages) History(ctx context.Context, user, session string) ([]domain.Message, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+messageColumns+` FROM (SELECT * FROM messages WHERE user_id=$1 AND session_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100) m ORDER BY created_at,id`, user, session)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+messageColumns+` FROM (SELECT * FROM messages WHERE user_id=$1 AND session_id=$2
+ AND created_at > COALESCE((SELECT reset_at FROM conversation_resets WHERE user_id=$1 AND session_id=$2),'-infinity'::timestamptz)
+ ORDER BY created_at DESC,id DESC LIMIT 100) m ORDER BY created_at,id`, user, session)
 	if err != nil {
 		return nil, err
 	}
