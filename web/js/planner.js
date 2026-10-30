@@ -49,14 +49,14 @@ export function createPlanner({ body, tabs, onSelect, onOpen, onToggleDone, onDe
 
     const [fromKey, toKey] = RANGES[tab](todayKey());
     try {
-      // Задачи без срока ни в один период не попадают [ФТ 8] — во «Ближайших» они отдельным разделом внизу
-      const [result, undated] = await Promise.all([
-        api.getItems({
-          from: startOfDayIso(fromKey),
-          to: startOfDayIso(toKey),
-          include_overdue: tab === 'upcoming' || tab === 'today' ? true : null,
-        }),
+      // Задачи без срока ни в один период не попадают [ФТ 8] — во «Ближайших» они отдельным разделом внизу.
+      // Просроченные бэкенд в ответе не отдаёт (overdue всегда пустой): берём открытые задачи со сроком
+      // раньше сегодняшнего дня и оставляем те, что он сам пометил computed.overdue
+      const withOverdue = tab === 'upcoming' || tab === 'today';
+      const [result, undated, past] = await Promise.all([
+        api.getItems({ from: startOfDayIso(fromKey), to: startOfDayIso(toKey) }),
         tab === 'upcoming' ? api.getUndatedItems(['task']) : null,
+        withOverdue ? api.getItems({ to: startOfDayIso(todayKey()), status: 'open', types: ['task'] }) : null,
       ]);
       if (seq !== requestSeq) return;
       clearTimeout(skeletonTimer);
@@ -65,7 +65,10 @@ export function createPlanner({ body, tabs, onSelect, onOpen, onToggleDone, onDe
       const items = active((result && result.items) || []);
       const shown = new Set(items.map((item) => item.id));
       for (const item of active((undated && undated.items) || [])) if (!shown.has(item.id)) items.push(item);
-      render(items, active((result && result.overdue) || []), fromKey, toKey);
+      const late = [...((result && result.overdue) || []), ...((past && past.items) || []).filter((item) => item.computed && item.computed.overdue)];
+      const lateIds = new Set();
+      const overdue = active(late).filter((item) => !shown.has(item.id) && !lateIds.has(item.id) && lateIds.add(item.id));
+      render(items, overdue, fromKey, toKey);
     } catch (error) {
       console.warn('Не загрузили записи', error);
       if (seq === requestSeq) clearTimeout(skeletonTimer);

@@ -6,4 +6,10 @@ export const CONFIG = {
   API_BASE: '',
   // Сервер ждёт LLM до 15 секунд [ФТ 15], фронт ждёт чуть дольше
   MESSAGE_TIMEOUT_MS: 20000,
+  // Тестовые аккаунты локального прототипа (backend/docs/auth.md): кнопки под окном входа
+  // подставляют их данные. Для публичной установки очистите список: [].
+  DEMO_ACCOUNTS: [
+    { label: 'Тестовый пользователь 1', login: 'demo1', password: 'DemoPass1!' },
+    { label: 'Тестовый пользователь 2', login: 'demo2', password: 'DemoPass2!' },
+  ],
 };

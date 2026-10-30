@@ -53,6 +53,65 @@ input { font: inherit; color: inherit; }
 }
 .source-badge.is-offline { background: var(--danger-soft); color: var(--danger); }
 
+/* ---------- Состояния страницы: загрузка и вход ---------- */
+
+body.is-booting .topbar,
+body.is-booting .layout,
+body.is-booting .login { visibility: hidden; }
+body.is-auth .topbar,
+body.is-auth .layout { display: none; }
+
+/* ---------- Страница входа ---------- */
+
+.login {
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 24px 16px;
+}
+.login[hidden] { display: none; }
+.login__brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 500; }
+.login__brand .brand__logo { width: 40px; height: 40px; }
+.login__brand .brand__logo svg { width: 27px; height: 27px; }
+.login__card {
+  width: min(380px, 100%); padding: 28px; border-radius: var(--radius); background: var(--panel);
+  box-shadow: 0 10px 40px rgba(35, 38, 74, .1);
+}
+.login__title { margin: 0 0 18px; font-size: 20px; font-weight: 500; }
+.login__note { margin: -6px 0 14px; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13px; color: var(--ink-2); }
+.login__note[hidden] { display: none; }
+.login__card .field { margin-bottom: 16px; }
+.login__card .field input { height: 40px; padding: 0 12px; border: 1px solid var(--faint); border-radius: 8px; background: #fff; font-size: 14px; width: 100%; }
+.login__card .field input:focus { outline: 0; border-color: var(--accent); }
+.login__password { position: relative; display: block; }
+.login__password input { padding-right: 40px; }
+.login__eye {
+  position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+}
+.login__eye:hover { background: var(--soft); color: var(--ink); }
+.login__eye[aria-pressed="true"] { color: var(--accent); }
+.login__eye svg { width: 18px; height: 18px; }
+.login__error { min-height: 1.2em; margin: -4px 0 8px; font-size: 13px; color: var(--danger); }
+.login__error:empty { display: none; }
+.login__submit { width: 100%; height: 42px; border-radius: 10px; font-size: 14px; }
+.login__submit:disabled { opacity: .7; }
+.login__demo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.login__demo[hidden] { display: none; }
+.login__demo-label { font-size: 12px; color: var(--muted); }
+.login__demo-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.login__demo .btn-ghost { padding: 6px 14px; font-size: 13px; }
+
+/* ---------- Меню профиля ---------- */
+
+.profile-wrap { position: relative; }
+.menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 170px; padding: 6px;
+  border-radius: 12px; background: var(--panel); box-shadow: 0 8px 30px rgba(35, 38, 74, .18);
+}
+.menu[hidden] { display: none; }
+.menu__name { padding: 8px 10px 6px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu__item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; }
+.menu__item:hover { background: var(--soft); color: var(--danger); }
+
 /* ---------- Сетка ---------- */
 
 .layout {
