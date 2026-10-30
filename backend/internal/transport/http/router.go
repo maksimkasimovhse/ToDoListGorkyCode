@@ -4,8 +4,9 @@ package http
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"gorky/backend/internal/service"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func NewRouter(messages *service.Messages, items *service.Items) http.Handler {
@@ -22,6 +23,9 @@ func NewRouter(messages *service.Messages, items *service.Items) http.Handler {
 	router.Get("/api/items/undated", handler.listItems)
 	router.Get("/api/items/search", handler.listItems)
 	router.Get("/api/items/{id}", handler.getItem)
+	router.Patch("/api/items/{id}", handler.updateItem)
+	router.Delete("/api/items/{id}", handler.deleteItem)
+	router.Handle("/*", http.FileServer(http.Dir("../web")))
 	return router
 }
 
