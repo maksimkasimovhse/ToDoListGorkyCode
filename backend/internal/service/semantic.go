@@ -54,7 +54,9 @@ func (s *Items) Search(ctx context.Context, user string, filter repository.ItemF
 		return lexical, false, err
 	}
 	if len(candidates) == 0 {
-		return lexical, false, nil
+		// Семантическому поиску нечего ранжировать после обязательных фильтров.
+		// Это нормальный пустой результат, а не недоступность embedding-сервиса.
+		return lexical, true, nil
 	}
 	texts := make([]string, 1, len(candidates)+1)
 	texts[0] = filter.Query
