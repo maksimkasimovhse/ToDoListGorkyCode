@@ -1,6 +1,7 @@
 import * as api from './api.js';
 import { isCancel, parseAnswer, parseConfirmation } from './answer.js';
 import { clearSession, getSession } from './auth.js';
+import { createCalendar } from './calendar.js';
 import { createChat } from './chat.js';
 import { createItemForm } from './item-form.js';
 import { hasDate } from './items.js';
@@ -87,6 +88,55 @@ const planner = createPlanner({
   onOpen: (item) => itemForm.edit(item),
   onToggleDone: markDone,
   onDelete: removeItem,
+});
+
+// Календарь в той же панели: вид «Список» (planner) или «Месяц» / «Неделя» (calendar)
+const calendar = createCalendar({
+  root: $('calendar'),
+  onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
+  onToggleDone: markDone,
+  onDelete: removeItem,
+  onAdd: (day) => itemForm.open({ date: day }),
+});
+
+const panel = { view: store.get('planner_view') || 'list', full: false };
+if (!['list', 'month', 'week'].includes(panel.view)) panel.view = 'list';
+
+function setFull(full) {
+  panel.full = full && panel.view !== 'list';
+  document.body.classList.toggle('is-calendar-full', panel.full);
+  $('calendar-full').title = panel.full ? 'Свернуть' : 'На весь экран';
+  $('calendar-full').setAttribute('aria-label', panel.full ? 'Свернуть календарь' : 'Развернуть календарь на весь экран');
+  calendar.setFull(panel.full);
+}
+
+function setView(view) {
+  panel.view = view;
+  store.set('planner_view', view);
+  for (const button of $('planner-views').querySelectorAll('[data-view]')) {
+    const active = button.dataset.view === view;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
+  }
+  $('planner-list').hidden = view !== 'list';
+  $('calendar-full').hidden = view === 'list';
+  if (view === 'list') {
+    calendar.hide();
+    setFull(false);
+    planner.refresh({ skeleton: true });
+  } else {
+    calendar.show(view);
+  }
+}
+
+$('planner-views').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-view]');
+  if (button && button.dataset.view !== panel.view) setView(button.dataset.view);
+});
+$('calendar-full').addEventListener('click', () => setFull(!panel.full));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !event.defaultPrevented && panel.full && !document.querySelector('dialog[open]')) setFull(false);
 });
 
 const recent = createRecent({
@@ -331,6 +381,7 @@ function setSelected(item) {
   $('selection').hidden = !item;
   $('selection-title').textContent = item ? item.title : '';
   planner.setSelected(item ? item.id : null);
+  calendar.setSelected(item ? item.id : null);
   recent.setSelected(item ? item.id : null);
   if (item) input.focus();
 }
@@ -340,7 +391,8 @@ $('selection-clear').addEventListener('click', () => setSelected(null));
 // ---------- Ручные действия в списке (2.3) ----------
 
 function refreshLists(flash = []) {
-  planner.refresh({ flash });
+  if (panel.view === 'list') planner.refresh({ flash });
+  else calendar.refresh({ flash });
   recent.refresh();
   if (CONFIG.MODE !== 'mock') reminders.sync();
 }
@@ -424,6 +476,8 @@ const itemForm = createItemForm({
     // Задача без срока видна только во «Ближайших» — показываем её там
     if (hasDate(item)) refreshLists([item.id]);
     else {
+      // Без срока в календаре записи нет — она видна только в списке «Ближайшие»
+      if (panel.view !== 'list') setView('list');
       planner.showTab('upcoming', { flash: [item.id] });
       recent.refresh();
     }
@@ -434,7 +488,7 @@ const itemForm = createItemForm({
   },
 });
 
-$('add-item').addEventListener('click', () => itemForm.open({ date: planner.selectedDay() }));
+$('add-item').addEventListener('click', () => itemForm.open({ date: panel.view === 'list' ? planner.selectedDay() : calendar.selectedDay() }));
 
 async function undoAction(token, button) {
   button.disabled = true;
@@ -531,7 +585,10 @@ function endSession(message = '') {
   setSelected(null);
   chat.clear();
   $('planner-body').replaceChildren();
+  $('calendar').querySelector('.cal-body')?.replaceChildren();
   $('recent-list').replaceChildren();
+  document.body.classList.remove('is-calendar-full');
+  panel.full = false;
   syncComposer();
   showLogin(message);
 }
@@ -725,7 +782,12 @@ async function startSession() {
   await loadHistory();
   // Напоминания — раньше списков: refreshLists тоже запускает их проверку и забрала бы «пропущенные» как обычные
   if (CONFIG.MODE !== 'mock') await reminders.start();
-  refreshLists();
+  // Сохранённый вид панели (список / месяц / неделя) восстанавливается при входе
+  if (panel.view === 'list') refreshLists();
+  else {
+    setView(panel.view);
+    recent.refresh();
+  }
   rememberVisit();
 
   if (wired) return;

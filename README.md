@@ -46,8 +46,10 @@ docker compose logs -f backend
 остаются в Go. Поиск объединяет совпадения слов с `Embeddings-2`; при недоступности embeddings
 автоматически остаётся поиск по словам. Подробнее: [интеграция модели](backend/docs/model-integration.md).
 
-`ml-stub` сохранён только для автономных тестов. Не запускайте его одновременно с `ml-worker`:
-оба используют одну consumer group.
+`ml-stub` сохранён только для автономных тестов, когда ключа GigaChat нет. Корневой
+`docker compose up` его не запускает. Не запускайте его одновременно с `ml-worker`: оба читают
+одну consumer group и делят сообщения между собой. Если заглушка запущена, перед
+`docker compose up` в корне остановите её: `cd ml-stub && docker compose down`.
 
 Примеры фраз: «Напомни завтра в 10 утра позвонить Ивану», «Поставь встречу с Иваном завтра»
 (ассистент спросит время), «Что у меня завтра?», «Найди задачу про билеты».
@@ -75,9 +77,13 @@ docker compose logs -f backend
     backend:
       build:
         network: host
+    ml-worker:
+      build:
+        network: host
   ```
 
 - **Страница просит войти снова.** Срок сессии 7 дней, а также токены сбрасываются при очистке Redis (`docker compose down -v`). Войдите заново.
+- **Чат отвечает дважды или через раз.** Одновременно запущены `ml-worker` и `ml-stub`. Остановите заглушку: `cd ml-stub && docker compose down`.
 - **Заглушка ML не запускается или зависла** (`docker ps` не показывает `ml-stub-ml-stub-1` или в логах нет `ml-stub started`). Она ставит npm-пакеты при старте; при сбое сети пересоздайте: `cd ml-stub && docker compose up -d --force-recreate`.
 - **Порт занят** (8080, 55432, 6379): измените `APP_PORT`, `POSTGRES_PORT`, `REDIS_PORT` в `.env`.
 - **Микрофон.** Голосовой ввод работает в Chrome, Edge и Safari по адресу `localhost` (или по https).

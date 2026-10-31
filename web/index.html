@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mara</title>
+  <title>Noti</title>
   <link rel="stylesheet" href="css/styles.css">
   <script type="module" src="js/app.js"></script>
 </head>
@@ -13,7 +13,7 @@
       <span class="brand__logo" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 9.5c1.2 4.2 7.8 4.2 10 0"/><path d="M12 4.5v3"/></svg>
       </span>
-      <span class="brand__name">Mara</span>
+      <span class="brand__name">Noti</span>
     </div>
 
     <form class="login__card" novalidate>
@@ -50,7 +50,7 @@
       <span class="brand__logo" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 9.5c1.2 4.2 7.8 4.2 10 0"/><path d="M12 4.5v3"/></svg>
       </span>
-      <span class="brand__name">Mara</span>
+      <span class="brand__name">Noti</span>
     </div>
     <div class="topbar__right">
       <span class="source-badge" id="source-badge" hidden></span>
@@ -126,20 +126,32 @@
       </div>
     </section>
 
-    <aside class="panel planner" aria-label="Мои записи">
+    <aside class="panel planner" id="planner-panel" aria-label="Мои записи">
       <div class="planner__head">
         <h2 class="panel__title">Мои записи</h2>
+        <button class="add-btn add-btn--ghost" id="calendar-full" type="button" aria-label="Развернуть календарь на весь экран" title="На весь экран" hidden>
+          <svg class="icon-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
+          <svg class="icon-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"/></svg>
+        </button>
         <button class="add-btn" id="add-item" type="button" aria-label="Добавить запись" title="Добавить запись">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
-      <div class="tabs" id="planner-tabs" role="tablist">
-        <button class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="upcoming">Ближайшие</button>
-        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="today">Сегодня</button>
-        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="tomorrow">Завтра</button>
-        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="week">Неделя</button>
+      <div class="views" id="planner-views" role="tablist" aria-label="Вид">
+        <button class="views__btn is-active" type="button" role="tab" aria-selected="true" data-view="list">Список</button>
+        <button class="views__btn" type="button" role="tab" aria-selected="false" data-view="month">Месяц</button>
+        <button class="views__btn" type="button" role="tab" aria-selected="false" data-view="week">Неделя</button>
       </div>
-      <div class="planner__body" id="planner-body"></div>
+      <div class="planner__list" id="planner-list">
+        <div class="tabs" id="planner-tabs" role="tablist">
+          <button class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="upcoming">Ближайшие</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="today">Сегодня</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="tomorrow">Завтра</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="week">Неделя</button>
+        </div>
+        <div class="planner__body" id="planner-body"></div>
+      </div>
+      <div class="calendar" id="calendar" hidden></div>
     </aside>
   </main>
 
