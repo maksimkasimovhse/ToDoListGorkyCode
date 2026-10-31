@@ -208,8 +208,8 @@ func (r *Messages) Apply(ctx context.Context, result domain.ResultEnvelope, retr
 	}
 
 	state.History = append(state.History, domain.Turn{Role: "user", Text: m.ModelRequest.Text}, domain.Turn{Role: "assistant", Text: reply.Reply})
-	if len(state.History) > 10 {
-		state.History = state.History[len(state.History)-10:]
+	if len(state.History) > 5 {
+		state.History = state.History[len(state.History)-5:]
 	}
 	_, err = persistReply(ctx, tx, m, state, reply, "")
 	if err != nil {
