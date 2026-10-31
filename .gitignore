@@ -6,3 +6,4 @@ backend/bin/
 coverage.out
 *.xlsx
 .DS_Store
+.DS_Store
