@@ -57,12 +57,12 @@ export function parseRequest(request) {
       return params ? ready([action('search', params)]) : notUnderstood();
     }
     case 'update':
-      return ready([action('update', { target: target(t, 'update'), changes: parseChanges(t, raw) })]);
+      return ready([action('update', { target: target(t, 'update', raw), changes: parseChanges(t, raw) })]);
     case 'delete':
-      return ready([action('delete', { target: target(t, 'delete') })]);
+      return ready([action('delete', { target: target(t, 'delete', raw) })]);
     case 'complete':
     case 'reopen':
-      return ready([action('complete', { target: target(t, 'complete'), done: intent === 'complete' })]);
+      return ready([action('complete', { target: target(t, 'complete', raw), done: intent === 'complete' })]);
     default:
       return notUnderstood();
   }
@@ -209,19 +209,34 @@ function searchParams(t) {
 
 // ---------- Цель изменения, удаления, выполнения [ФТ 10] ----------
 
-function target(t, intent) {
+/**
+ * Бэкенд ищет запись подстрокой в названии без морфологии (ILIKE), поэтому «я позвонил Ивану» не найдёт
+ * «позвонить Ивану». Берём основу слова: «позвонил» → «позвон». Если в фразе есть имя (слово с заглавной
+ * буквы не в начале), берём его: оно точнее глагола и сразу отсекает чужие «позвонить …». Слова берутся из
+ * исходной фразы, чтобы сохранить «ё»: в названии «отчёт» подстрока с «е» не совпадёт.
+ */
+function filterQuery(words, raw) {
+  const tokens = raw.split(/[^а-яёА-ЯЁa-zA-Z0-9-]+/).filter(Boolean);
+  const original = new Map(tokens.map((word) => [word.toLowerCase().replace(/ё/g, 'е'), word.toLowerCase()]));
+  const names = new Set(tokens.slice(1).filter((word) => /^[А-ЯЁA-Z]/.test(word) && word.length > 2).map((word) => word.toLowerCase().replace(/ё/g, 'е')));
+  const longest = (list) => list.map((word) => original.get(word) || word).reduce((best, word) => (word.length > best.length ? word : best), '');
+  const picked = longest(words.filter((word) => names.has(word))) || longest(words);
+  return picked ? stem(picked) : null;
+}
+
+function target(t, intent, raw) {
   const number = parseOrdinal(t);
   if (number) return { ref: 'candidate', numbers: [number] };
   const terms = targetTerms(t, intent === 'complete' ? 'complete' : intent);
   if (terms.pronoun) return { ref: 'focus' };
   return {
     ref: 'filter',
-    query: terms.words.join(' ') || null,
+    query: filterQuery(terms.words, raw),
     participant: terms.participant,
     types: terms.types,
     from: null,
     to: null,
-    status: 'open',
+    status: terms.types?.length === 1 && terms.types[0] === 'meeting' ? 'scheduled' : intent === 'complete' ? (/верни|вернуть/.test(t) ? 'done' : 'open') : null,
     all: terms.all,
   };
 }

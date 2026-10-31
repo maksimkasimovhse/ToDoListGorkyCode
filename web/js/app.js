@@ -1,10 +1,15 @@
 import * as api from './api.js';
 import { isCancel, parseAnswer, parseConfirmation } from './answer.js';
+import { clearSession, getSession } from './auth.js';
+import { createCalendar } from './calendar.js';
 import { createChat } from './chat.js';
+import { createItemForm } from './item-form.js';
+import { hasDate } from './items.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
-import { createPlanner } from './planner.js';
+import { createLogin } from './login.js';
 import { createRecent } from './recent.js';
+import { createReminders } from './reminders.js';
 import { createSettings, stripName } from './settings.js';
 import { configureClock, formatDayMonth, formatTime, now } from './time.js';
 import { createRecognizer, recognitionSupported, speech } from './voice.js';
@@ -62,8 +67,10 @@ const chat = createChat({
   handlers: {
     // Текст кнопки тоже отправляем: он попадает в историю и понятен серверу без choice
     // Подтверждение сценария бэкенда — через /answer; без flow (заглушка) — обычным сообщением
-    onOption: (option, flow) => (flow
-      ? runFlow(option.label, (f) => api.answerFlow(f, { confirmed: option.id === 'yes' }))
+    onOption: (option, flow) => (option.id.startsWith('reminder:')
+      ? reminderAction(option.id)
+      : flow
+      ? runFlow(option.label, (f) => api.answerFlow(f, f.reply.type === 'choose' ? { option_id: option.id } : { confirmed: option.id === 'yes' }))
       : send({ text: option.label, choice: { option_id: option.id } })),
     onFlowAnswer: (flow, fields) => runFlow(describeFields(fields), (f) => api.answerFlow(f, fields)),
     onFlowCancel: () => runFlow('Отмена', api.cancelFlow),
@@ -73,12 +80,58 @@ const chat = createChat({
   },
 });
 
-const planner = createPlanner({
-  body: $('planner-body'),
-  tabs: $('planner-tabs'),
+// Панель «Мои записи» — календарь: «Неделя» или «Месяц»
+const calendar = createCalendar({
+  root: $('calendar'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
   onToggleDone: markDone,
   onDelete: removeItem,
+  onAdd: (day) => itemForm.open({ date: day }),
+});
+
+const panel = { view: store.get('planner_view') || 'week', full: false };
+if (!['month', 'week'].includes(panel.view)) panel.view = 'week';
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+/** Перестройка страницы с плавным переездом панелей (View Transitions), где браузер это умеет */
+function animateLayout(change) {
+  if (!document.startViewTransition || reducedMotion.matches || document.hidden) return change();
+  document.startViewTransition(change);
+}
+
+function setFull(full, { animate = true } = {}) {
+  if (full === panel.full) return;
+  const apply = () => {
+    panel.full = full;
+    document.body.classList.toggle('is-calendar-full', full);
+    $('calendar-full').title = full ? 'Свернуть' : 'На весь экран';
+    $('calendar-full').setAttribute('aria-label', full ? 'Свернуть календарь' : 'Развернуть календарь на весь экран');
+    calendar.setFull(full);
+  };
+  if (animate) animateLayout(apply);
+  else apply();
+}
+
+function setView(view, options) {
+  panel.view = view;
+  store.set('planner_view', view);
+  for (const button of $('planner-views').querySelectorAll('[data-view]')) {
+    const active = button.dataset.view === view;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
+  }
+  return calendar.show(view, options);
+}
+
+$('planner-views').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-view]');
+  if (button && button.dataset.view !== panel.view) setView(button.dataset.view);
+});
+$('calendar-full').addEventListener('click', () => setFull(!panel.full));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !event.defaultPrevented && panel.full && !document.querySelector('dialog[open]')) setFull(false);
 });
 
 const recent = createRecent({
@@ -87,6 +140,7 @@ const recent = createRecent({
   search: $('recent-search'),
   filters: $('recent-filters'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
 });
 
 const recognizer = createRecognizer({
@@ -196,6 +250,7 @@ function answerByText(text, inputMode) {
   const voice = inputMode === 'voice';
   const flow = state.flow;
   if (isCancel(text)) return runFlow(text, api.cancelFlow, { voice });
+  if (flow.reply.type === 'choose') return runFlow(text, (f) => api.answerFlow(f, { text }), { voice });
   if (flow.status === 'awaiting_confirmation') {
     const confirmed = parseConfirmation(text);
     if (confirmed === null) return toast('Ответьте «да» или «нет».');
@@ -268,7 +323,6 @@ const settings = createSettings({
   note: $('settings-note'),
   onChange: ({ name }) => {
     $('assistant-name').textContent = name;
-    document.title = `${name} — голосовой ассистент`;
   },
 });
 
@@ -321,7 +375,7 @@ function setSelected(item) {
   state.selected = item ? { id: item.id, title: item.title } : null;
   $('selection').hidden = !item;
   $('selection-title').textContent = item ? item.title : '';
-  planner.setSelected(item ? item.id : null);
+  calendar.setSelected(item ? item.id : null);
   recent.setSelected(item ? item.id : null);
   if (item) input.focus();
 }
@@ -331,17 +385,27 @@ $('selection-clear').addEventListener('click', () => setSelected(null));
 // ---------- Ручные действия в списке (2.3) ----------
 
 function refreshLists(flash = []) {
-  planner.refresh({ flash });
+  calendar.refresh({ flash });
   recent.refresh();
+  if (CONFIG.MODE !== 'mock') reminders.sync();
+}
+
+/** Откат действия по токену бэкенда (POST /api/undo): запись возвращается такой же, с тем же id */
+async function undoByToken(token, flash = [], message = 'Отменил действие') {
+  await api.undo(token);
+  refreshLists(flash);
+  toast(message);
 }
 
 async function markDone(item) {
   try {
-    await api.patchItem(item.id, { status: 'done' });
+    const changed = await api.patchItem(item.id, { status: 'done' });
     refreshLists();
     toast(`Отмечено выполненным: ${item.title}`, {
       label: 'Вернуть',
-      run: () => api.patchItem(item.id, { status: 'open' }).then(() => refreshLists([item.id])),
+      run: () => (changed && changed.undo_token
+        ? undoByToken(changed.undo_token, [item.id], `Вернул в работу: ${item.title}`)
+        : api.patchItem(item.id, { status: 'open' }).then(() => refreshLists([item.id]))),
     });
   } catch (error) {
     console.warn(error);
@@ -349,18 +413,74 @@ async function markDone(item) {
   }
 }
 
-async function removeItem(item) {
+async function reopenItem(item) {
   try {
-    const result = await api.deleteItem(item.id);
-    if (state.selected && state.selected.id === item.id) setSelected(null);
-    refreshLists();
-    const token = result && result.undo_token;
-    toast(`Удалено: ${item.title}`, token ? { label: 'Отменить', run: () => api.undo(token).then(() => refreshLists([item.id])) } : null);
+    await api.patchItem(item.id, { status: 'open' });
+    refreshLists([item.id]);
+    toast(`Вернул в работу: ${item.title}`);
   } catch (error) {
     console.warn(error);
-    toast(error.code === 'not_implemented' ? 'Удаление пока не поддерживается бэкендом.' : 'Не получилось удалить. Попробуйте ещё раз.');
+    toast('Не получилось сохранить. Попробуйте ещё раз.');
   }
 }
+
+const DELETED = { task: 'Задача удалена', reminder: 'Напоминание удалено', meeting: 'Встреча удалена' };
+
+async function removeItem(item) {
+  try {
+    const deleted = await api.deleteItem(item.id);
+    if (state.selected && state.selected.id === item.id) setSelected(null);
+    refreshLists();
+    toast(`${DELETED[item.type]}: ${item.title}`, {
+      label: 'Вернуть',
+      run: () => (deleted && deleted.undo_token ? undoByToken(deleted.undo_token, [item.id], `Вернул: ${item.title}`) : restoreItem(item)),
+    });
+  } catch (error) {
+    console.warn(error);
+    refreshLists();
+    toast('Не получилось удалить. Попробуйте ещё раз.');
+  }
+}
+
+// Поля, по которым удалённая запись создаётся заново: бэкенд не умеет снимать отметку удаления
+const RESTORE_FIELDS = ['type', 'title', 'source_text', 'due_date', 'due_at', 'period_start', 'period_end', 'start_at', 'end_at', 'all_day', 'participants', 'location', 'remind_at'];
+
+/** «Вернуть» после удаления: та же запись с новым id; пересечения встреч уже были разрешены раньше */
+async function restoreItem(item) {
+  const fields = Object.fromEntries(RESTORE_FIELDS.map((key) => [key, item[key]]));
+  const restored = await api.createItem(fields, { allowConflicts: true });
+  if (item.status === 'done') await api.patchItem(restored.id, { status: 'done' });
+  refreshLists([restored.id]);
+  toast(`Вернул: ${item.title}`);
+}
+
+// ---------- Ручное добавление записи ----------
+
+const itemForm = createItemForm({
+  dialog: $('item-dialog'),
+  onUpdated: (item) => {
+    refreshLists([item.id]);
+    toast(`Сохранено: ${item.title}`, item.undo_token ? { label: 'Отменить', run: () => undoByToken(item.undo_token, [item.id], `Вернул прежнее: ${item.title}`) } : null);
+  },
+  onDelete: removeItem,
+  onDone: markDone,
+  onReopen: reopenItem,
+  onCreated: (item) => {
+    if (hasDate(item)) refreshLists([item.id]);
+    else {
+      // Задача без срока видна только в узкой текущей неделе, в разделе «Без срока» — показываем её там
+      setFull(false);
+      setView('week', { today: true, flash: [item.id] });
+      recent.refresh();
+    }
+    toast(`Добавлено: ${item.title}`, {
+      label: 'Отменить',
+      run: () => (item.undo_token ? undoByToken(item.undo_token, [], `Отменил: ${item.title}`) : api.deleteItem(item.id).then(() => refreshLists())),
+    });
+  },
+});
+
+$('add-item').addEventListener('click', () => itemForm.open({ date: calendar.selectedDay() }));
 
 async function undoAction(token, button) {
   button.disabled = true;
@@ -388,7 +508,8 @@ function toast(text, action = null) {
     node.append(button);
   }
   $('toasts').append(node);
-  setTimeout(() => node.remove(), 6000);
+  // С кнопкой «Вернуть» или «Отменить» тост живёт дольше, чтобы успеть нажать
+  setTimeout(() => node.remove(), action ? 8000 : 5000);
 }
 
 // ---------- Сессия и история ----------
@@ -413,8 +534,80 @@ $('new-dialog').addEventListener('click', async () => {
   chat.clear();
 });
 
-$('profile-btn').addEventListener('click', () => {
-  toast('Вход и регистрация появятся позже. Сейчас вы работаете как гость.');
+// ---------- Профиль и выход ----------
+
+const profileButton = $('profile-btn');
+const profileMenu = $('profile-menu');
+
+function setMenu(open) {
+  profileMenu.hidden = !open;
+  profileButton.setAttribute('aria-expanded', String(open));
+}
+
+profileButton.addEventListener('click', (event) => {
+  event.stopPropagation();
+  setMenu(profileMenu.hidden);
+});
+document.addEventListener('click', (event) => {
+  if (!profileMenu.hidden && !event.target.closest('.profile-wrap')) setMenu(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') setMenu(false);
+});
+
+$('logout-btn').addEventListener('click', async () => {
+  setMenu(false);
+  // Токен отзываем на сервере, но выходим и при ошибке: сессия в браузере всё равно сбрасывается
+  await api.logout().catch((error) => console.warn('Выход на сервере не прошёл', error));
+  endSession();
+});
+
+/** Вход нужен, когда отвечает настоящий бэкенд; заглушка без бэкенда обходится без него */
+const authRequired = CONFIG.MODE !== 'mock';
+
+/** Вернуть страницу в состояние «никто не вошёл»: чужие данные с экрана убираем */
+function endSession(message = '') {
+  clearSession();
+  reminders.stop();
+  speech.cancel();
+  state.flow = null;
+  state.sessionId = newSessionId();
+  state.busy = false;
+  setBusy(false);
+  setSelected(null);
+  chat.clear();
+  setFull(false, { animate: false });
+  $('calendar').querySelector('.cal-body')?.replaceChildren();
+  $('recent-list').replaceChildren();
+  syncComposer();
+  showLogin(message);
+}
+
+const login = createLogin({
+  root: $('login'),
+  onLoggedIn: () => {
+    document.body.classList.remove('is-auth');
+    $('login').hidden = true;
+    startSession();
+  },
+});
+
+function showLogin(message = '') {
+  document.body.classList.remove('is-booting');
+  document.body.classList.add('is-auth');
+  $('login').hidden = false;
+  login.show(message);
+}
+
+// Токен истёк или отозван: любой запрос получил 401 unauthorized
+let unauthorizedShown = false;
+api.apiEvents.addEventListener('unauthorized', () => {
+  if (!authRequired || unauthorizedShown || document.body.classList.contains('is-auth')) return;
+  unauthorizedShown = true;
+  endSession('Сессия закончилась. Войдите снова.');
+  setTimeout(() => {
+    unauthorizedShown = false;
+  }, 500);
 });
 
 async function loadHistory() {
@@ -455,27 +648,52 @@ async function loadHistory() {
 
 // ---------- Напоминания (2.5) ----------
 
+const REMIND_LATER_MIN = 15;
+
+/** Напоминание наступило при открытой странице (или пришло событие заглушки) */
 function onReminder({ item, reply }) {
   const text = reply || `Напоминаю: ${item.title}.`;
-  chat.addAssistant({ ...localReply('info', text, { reason: 'reminder' }, [item]), suggestions: ['Сделано', 'Напомни через 15 минут'] });
+  chat.addAssistant({
+    ...localReply('info', text, { reason: 'reminder' }, [item]),
+    // Кнопки обрабатывает фронт: «Сделано» и «Отложить» меняют саму запись, а не отправляют фразу ассистенту
+    options: [
+      { id: `reminder:done:${item.id}`, label: 'Сделано' },
+      { id: `reminder:later:${item.id}`, label: `Через ${REMIND_LATER_MIN} минут` },
+    ],
+  });
   beep();
   say(text);
 }
 
-async function showMissedReminders() {
-  const since = store.get('last_seen');
-  if (!since) return;
+/** Напоминания, сработавшие, пока страницы не было */
+function onMissedReminders(items) {
+  const shown = items.slice(0, 5).map((item) => `«${item.title}» в ${formatTime(item.remind_at)}`).join(', ');
+  const rest = items.length > 5 ? ` и ещё ${items.length - 5}` : '';
+  const noun = items.length === 1 ? 'напоминание' : 'напоминания';
+  chat.addAssistant(localReply('info', `Пока вас не было: ${noun} ${shown}${rest}.`, { reason: 'missed' }, items.slice(0, 5)));
+  say('Пока вас не было сработали напоминания.');
+}
+
+async function reminderAction(optionId) {
+  const [, action, id] = optionId.split(':');
   try {
-    const result = await api.getMissedReminders(since);
-    const items = Array.isArray(result) ? result : (result && result.items) || [];
-    if (!items.length) return;
-    const list = items.map((item) => `«${item.title}» в ${formatTime(item.remind_at)}`).join(', ');
-    const noun = items.length === 1 ? 'напоминание' : 'напоминания';
-    chat.addAssistant(localReply('info', `Пока вас не было: ${noun} ${list}.`, { reason: 'missed' }, items));
+    const item = await api.getItem(id);
+    if (action === 'done') return markDone(item);
+    const later = new Date(now().getTime() + REMIND_LATER_MIN * 60000).toISOString();
+    await api.patchItem(id, { remind_at: later });
+    refreshLists([id]);
+    toast(`Напомню через ${REMIND_LATER_MIN} минут: ${item.title}`);
   } catch (error) {
     console.warn(error);
+    toast('Не получилось. Попробуйте ещё раз.');
   }
 }
+
+const reminders = createReminders({
+  lastSeen: () => store.get('last_seen'),
+  onFire: (item) => onReminder({ item }),
+  onMissed: onMissedReminders,
+});
 
 function rememberVisit() {
   store.set('last_seen', now().toISOString());
@@ -533,26 +751,45 @@ function renderSource() {
 
 // ---------- Старт ----------
 
-async function init() {
-  syncSpeakToggle();
-  setListening(false);
+let wired = false;
+
+/** Данные пользователя: профиль, история чата, списки. Вызывается при запуске и после каждого входа */
+async function startSession() {
+  document.body.classList.remove('is-booting');
+  setBusy(false);
   source.backendAlive = await api.checkHealth();
   renderSource();
   try {
     const me = await api.getMe();
     configureClock(me);
-    $('profile-btn').title = me.login || 'Гость';
+    const name = me.login || (getSession() && getSession().user && getSession().user.login) || null;
+    profileButton.title = name || 'Профиль';
+    $('profile-name').textContent = name ? `Вы вошли как ${name}` : 'Гость';
+    $('logout-btn').hidden = !authRequired;
   } catch (error) {
     console.warn('Профиль не загрузился', error);
   }
   await loadHistory();
-  refreshLists();
-  await showMissedReminders();
+  // Напоминания — раньше списков: refreshLists тоже запускает их проверку и забрала бы «пропущенные» как обычные
+  if (CONFIG.MODE !== 'mock') await reminders.start();
+  // Сохранённый вид панели (неделя / месяц) восстанавливается при входе
+  setView(panel.view);
+  recent.refresh();
   rememberVisit();
+
+  if (wired) return;
+  wired = true;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') rememberVisit();
   });
   api.subscribe({ reminder: onReminder, items_changed: () => refreshLists() });
+}
+
+function init() {
+  syncSpeakToggle();
+  setListening(false);
+  if (authRequired && !getSession()) showLogin();
+  else startSession();
 }
 
 init();

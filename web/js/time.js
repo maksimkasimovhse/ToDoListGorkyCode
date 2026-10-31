@@ -67,6 +67,11 @@ export function startOfDayIso(key) {
   return `${key}T00:00:00${utcOffset(new Date(`${key}T12:00:00Z`))}`;
 }
 
+/** Момент в поясе пользователя: ('2026-10-31', '15:00') → '2026-10-31T15:00:00+03:00' */
+export function localIso(key, time) {
+  return `${key}T${time}:00${utcOffset(new Date(`${key}T12:00:00Z`))}`;
+}
+
 export function formatTime(value) {
   return formatter('ru-RU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(toDate(value));
 }

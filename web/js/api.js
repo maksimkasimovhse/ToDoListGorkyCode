@@ -1,13 +1,16 @@
 // Клиент API по contracts.md, раздел 2. Заглушка js/mock/server.js принимает те же пути и форматы,
 // поэтому режим (CONFIG.MODE) меняет только то, кто отвечает, а не код вызовов.
+import { getToken } from './auth.js';
 import { CONFIG } from './config.js';
 import { getTimeZone } from './time.js';
 
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  /** details — тело ошибки бэкенда целиком, например conflicts у 409 meeting_conflict */
+  constructor(status, code, message, details = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -19,7 +22,8 @@ class RouteUnavailable extends ApiError {
   }
 }
 
-// Сообщает app.js, какие маршруты обслуживает заглушка: { detail: { route, reason } }
+// События клиента для app.js: 'fallback' — маршрут отвечает заглушка { detail: { route, reason } },
+// 'unauthorized' — сервер не принял токен
 export const apiEvents = new EventTarget();
 
 let mockModule = null;
@@ -27,14 +31,6 @@ const loadMock = () => (mockModule ??= import('./mock/server.js'));
 
 // Маршруты, которых в бэкенде нет. Бэкенд при этом жив, так что до перезагрузки страницы не спрашиваем
 const missingRoutes = new Set();
-
-function authToken() {
-  try {
-    return localStorage.getItem('auth_token');
-  } catch {
-    return null;
-  }
-}
 
 function toParams(query = {}) {
   const params = new URLSearchParams();
@@ -103,7 +99,7 @@ async function mockRequest(method, path, params, body) {
 async function httpRequest(method, path, params, body, timeoutMs) {
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const token = authToken();
+  const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const controller = new AbortController();
@@ -128,6 +124,8 @@ async function httpRequest(method, path, params, body, timeoutMs) {
   if (response.ok) return data;
 
   const error = data && data.error;
+  // Токен не принят (истёк, отозван): приложению пора показать вход. invalid_credentials при входе — не он
+  if (response.status === 401 && error && error.code === 'unauthorized') apiEvents.dispatchEvent(new Event('unauthorized'));
   // 404/405 без ошибки по контракту (2.7) — это ответ роутера chi «нет такого маршрута», а не «нет записи»
   if ((response.status === 404 || response.status === 405) && !error) {
     throw new RouteUnavailable(response.status, 'not_implemented', { permanent: true });
@@ -136,7 +134,7 @@ async function httpRequest(method, path, params, body, timeoutMs) {
   if ([502, 503, 504].includes(response.status) && !error) {
     throw new RouteUnavailable(response.status, 'backend_unavailable', { permanent: false });
   }
-  throw new ApiError(response.status, error ? error.code : `http_${response.status}`, error ? error.message : 'Ошибка сервера');
+  throw new ApiError(response.status, error ? error.code : `http_${response.status}`, error ? error.message : 'Ошибка сервера', error);
 }
 
 const POLL_INTERVAL_MS = 1000;
@@ -226,16 +224,31 @@ export async function refreshFlow(flow) {
 export const getItems = ({ from, to, types, status, include_overdue } = {}) =>
   request('GET', '/api/items', { query: { from, to, types, status, include_overdue, timezone: getTimeZone() } });
 
-// [не в контракте] Для панели «Последнее»: последние созданные записи. Предложено добавить в 2.3.
-// Бэкенд sort пока не понимает и сортирует по сроку — список всё равно показывается.
-export const getRecentItems = ({ types, limit = 20 } = {}) =>
-  request('GET', '/api/items', { query: { sort: '-created_at', limit, types, timezone: getTimeZone() } });
+/**
+ * Для панели «Последнее»: недавно созданные записи. Бэкенд сортирует по сроку записи и параметр sort не
+ * понимает, поэтому берём максимум (100) и упорядочиваем по created_at здесь.
+ */
+export async function getRecentItems({ types, limit = 20 } = {}) {
+  const result = await request('GET', '/api/items', { query: { sort: '-created_at', limit: 100, types, timezone: getTimeZone() } });
+  const items = ((result && result.items) || []).slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  return { ...result, items: items.slice(0, limit) };
+}
 
 export const getUndatedItems = (types) => request('GET', '/api/items/undated', { query: { types, timezone: getTimeZone() } });
 export const searchItems = (q, limit = 20) => request('GET', '/api/items/search', { query: { q, limit, timezone: getTimeZone() } });
 export const getItem = (id) => request('GET', `/api/items/${encodeURIComponent(id)}`);
-export const patchItem = (id, changes) =>
-  request('PATCH', `/api/items/${encodeURIComponent(id)}`, { body: changes, missing: 'error' });
+/**
+ * Ручное создание записи. Пересечение встреч — ошибка 409 meeting_conflict с details.conflicts;
+ * allowConflicts: true сохраняет запись несмотря на пересечения (backend/docs/meeting-conflicts.md).
+ */
+export const createItem = (fields, { allowConflicts = false } = {}) =>
+  request('POST', '/api/items', { body: { ...fields, allow_conflicts: allowConflicts }, missing: 'error' });
+
+export const patchItem = (id, changes, { allowConflicts = false } = {}) =>
+  request('PATCH', `/api/items/${encodeURIComponent(id)}`, {
+    body: allowConflicts ? { ...changes, allow_conflicts: true } : changes,
+    missing: 'error',
+  });
 export const deleteItem = (id) => request('DELETE', `/api/items/${encodeURIComponent(id)}`, { missing: 'error' });
 export const undo = (undoToken) => request('POST', '/api/undo', { body: { undo_token: undoToken }, missing: 'error' });
 
@@ -250,9 +263,14 @@ export const resetSession = (sessionId) =>
   request('POST', '/api/session/reset', { body: { session_id: sessionId }, missing: () => ({ ok: true }) });
 
 // Без /api/me в бэкенде берём часы и пояс браузера: часы заглушки заморожены и с записями бэкенда не совпадут
+/** Вход: { token, user, expires_at }. Ошибки: 401 invalid_credentials, 429 too_many_attempts, 503 auth_unavailable */
+export const login = (loginName, password) =>
+  request('POST', '/api/auth/login', { body: { login: loginName, password }, timeoutMs: 15000, missing: 'error' });
+
+export const logout = () => request('POST', '/api/auth/logout', { missing: () => null });
+
 export const getMe = () =>
   request('GET', '/api/me', { missing: () => ({ id: null, login: null, timezone: getTimeZone(), settings: {} }) });
-export const getMissedReminders = (since) => request('GET', '/api/reminders/missed', { query: { since } });
 
 /** Проверка жизни бэкенда (GET /healthz). В режиме mock бэкенда нет — false */
 export async function checkHealth() {
@@ -267,6 +285,8 @@ export async function checkHealth() {
 
 /** События сервера (2.5). handlers: { reminder(payload), items_changed(payload) }. Возвращает функцию отписки. */
 export function subscribe(handlers) {
+  // В режиме backend потока событий нет: напоминания срабатывают на фронте (reminders.js)
+  if (CONFIG.MODE === 'backend') return () => {};
   let unsubscribe = () => {};
   let closed = false;
 
@@ -283,9 +303,9 @@ export function subscribe(handlers) {
     };
   }
 
-  // EventSource не умеет заголовок Authorization — токен передаём в query (предложено добавить в контракт)
-  const token = authToken();
-  const source = new EventSource(`${CONFIG.API_BASE}/api/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+  // Токен в адрес нельзя (backend/docs/auth.md), а EventSource не умеет заголовок Authorization.
+  // Потока событий в бэкенде пока нет; когда появится, понадобится другая схема доступа
+  const source = new EventSource(`${CONFIG.API_BASE}/api/stream`);
   let opened = false;
   source.addEventListener('open', () => {
     opened = true;

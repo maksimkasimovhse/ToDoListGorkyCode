@@ -13,12 +13,17 @@ import (
 )
 
 type Messages struct {
-	repo    repository.MessageRepository
-	timeout time.Duration
+	repo     repository.MessageRepository
+	timeout  time.Duration
+	embedder Embedder
 }
 
-func NewMessages(repo repository.MessageRepository, timeout time.Duration) *Messages {
-	return &Messages{repo: repo, timeout: timeout}
+func NewMessages(repo repository.MessageRepository, timeout time.Duration, embedders ...Embedder) *Messages {
+	messages := &Messages{repo: repo, timeout: timeout}
+	if len(embedders) > 0 {
+		messages.embedder = embedders[0]
+	}
+	return messages
 }
 
 func (s *Messages) Submit(ctx context.Context, user string, req domain.MessageRequest) (domain.Message, error) {
@@ -97,7 +102,7 @@ func (s *Messages) HandleResult(ctx context.Context, envelope domain.ResultEnvel
 		if bad {
 			return domain.ErrorReply("llm_bad_output", "Не получилось разобрать ответ модели. Попробуйте ещё раз."), state, nil
 		}
-		return execute(ctx, items, m, state, result)
+		return execute(ctx, items, m, state, result, s.embedder)
 	})
 	if err != nil && ctx.Err() == nil {
 		// Исходная транзакция уже отменена; сохраняем ошибку отдельной транзакцией.
@@ -135,4 +140,11 @@ func validResult(r domain.ModelResult) bool {
 		}
 	}
 	return true
+}
+
+func (s *Messages) Reset(ctx context.Context, user, session string) error {
+	if strings.TrimSpace(session) == "" || len(session) > 128 {
+		return invalid("нужен session_id длиной до 128 байт")
+	}
+	return s.repo.Reset(ctx, user, session)
 }

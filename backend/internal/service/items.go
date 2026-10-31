@@ -62,9 +62,18 @@ func ValidateItem(item domain.Item) error {
 	return nil
 }
 
-type Items struct{ repo repository.ItemRepository }
+type Items struct {
+	repo     repository.ItemRepository
+	embedder Embedder
+}
 
-func NewItems(repo repository.ItemRepository) *Items { return &Items{repo: repo} }
+func NewItems(repo repository.ItemRepository, embedders ...Embedder) *Items {
+	items := &Items{repo: repo}
+	if len(embedders) > 0 {
+		items.embedder = embedders[0]
+	}
+	return items
+}
 
 func (s *Items) Create(ctx context.Context, user string, item domain.Item) (domain.Item, error) {
 	return s.CreateWithOptions(ctx, user, item, SaveOptions{})
@@ -72,11 +81,14 @@ func (s *Items) Create(ctx context.Context, user string, item domain.Item) (doma
 
 func (s *Items) CreateWithOptions(ctx context.Context, user string, item domain.Item, options SaveOptions) (domain.Item, error) {
 	var saved domain.Item
-	err := s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error {
+	token, err := s.repo.WithUndo(ctx, user, func(repo repository.ItemRepository) error {
 		var err error
 		saved, err = NewItems(repo).create(ctx, user, item, options)
 		return err
 	})
+	if err == nil {
+		saved.UndoToken = token
+	}
 	return saved, err
 }
 
@@ -183,11 +195,14 @@ func present(item domain.Item, timezone string, now time.Time) domain.Item {
 // Update изменяет только переданные поля; null очищает необязательное поле.
 func (s *Items) Update(ctx context.Context, user, id string, patch map[string]json.RawMessage) (domain.Item, error) {
 	var saved domain.Item
-	err := s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error {
+	token, err := s.repo.WithUndo(ctx, user, func(repo repository.ItemRepository) error {
 		var err error
 		saved, err = NewItems(repo).update(ctx, user, id, patch)
 		return err
 	})
+	if err == nil {
+		saved.UndoToken = token
+	}
 	return saved, err
 }
 
@@ -275,8 +290,23 @@ func (s *Items) update(ctx context.Context, user, id string, patch map[string]js
 }
 
 func (s *Items) Delete(ctx context.Context, user, id string) error {
+	_, err := s.DeleteWithUndo(ctx, user, id)
+	return err
+}
+func (s *Items) DeleteWithUndo(ctx context.Context, user, id string) (*string, error) {
 	if _, err := uuid.Parse(id); err != nil {
-		return invalid("неверный id")
+		return nil, invalid("неверный id")
 	}
-	return s.repo.WithUserLock(ctx, user, func(repo repository.ItemRepository) error { return repo.Delete(ctx, user, id) })
+	return s.repo.WithUndo(ctx, user, func(repo repository.ItemRepository) error { return repo.Delete(ctx, user, id) })
+}
+func (s *Items) Undo(ctx context.Context, user, token string) (domain.Reply, error) {
+	if len(token) != 48 || !strings.HasPrefix(token, "undo_") {
+		return domain.Reply{}, invalid("неверный undo_token")
+	}
+	reply, err := s.repo.Undo(ctx, user, token)
+	var conflict *repository.UndoMeetingConflict
+	if errors.As(err, &conflict) {
+		return domain.Reply{}, &MeetingConflictError{Conflicts: conflict.Conflicts}
+	}
+	return reply, err
 }

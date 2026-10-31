@@ -4,3 +4,4 @@
 backend/bin/
 *.test
 coverage.out
+*.xlsx

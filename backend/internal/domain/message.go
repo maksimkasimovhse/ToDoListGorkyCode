@@ -65,6 +65,8 @@ func (m Message) Active() bool {
 
 // InputToken связывает ответ с конкретным окном уточнения и защищает от повторной отправки.
 type MessageAnswer struct {
+	OptionID    *string `json:"option_id,omitempty"`
+	Text        *string `json:"text,omitempty"`
 	InputToken  string  `json:"input_token"`
 	Date        *string `json:"date,omitempty"`
 	Time        *string `json:"time,omitempty"`
@@ -78,10 +80,20 @@ type Turn struct {
 	Text string `json:"text"`
 }
 
+type PendingMutation struct {
+	Timezone     string                     `json:"timezone"`
+	Stage        string                     `json:"stage"`
+	Candidates   []Item                     `json:"candidates"`
+	Selected     *Item                      `json:"selected"`
+	Patch        map[string]json.RawMessage `json:"patch,omitempty"`
+	ConflictKeys []string                   `json:"conflict_keys,omitempty"`
+}
+
 type Draft struct {
-	ConflictActionIndex int      `json:"conflict_action_index,omitempty"`
-	RescheduleIndex     *int     `json:"reschedule_index,omitempty"`
-	ConflictKeys        []string `json:"conflict_keys,omitempty"`
+	Mutation            *PendingMutation `json:"mutation,omitempty"`
+	ConflictActionIndex int              `json:"conflict_action_index,omitempty"`
+	RescheduleIndex     *int             `json:"reschedule_index,omitempty"`
+	ConflictKeys        []string         `json:"conflict_keys,omitempty"`
 	Action
 	SourceText     string    `json:"source_text"`
 	PendingActions []Action  `json:"pending_actions,omitempty"`

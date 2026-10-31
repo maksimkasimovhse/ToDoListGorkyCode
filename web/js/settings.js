@@ -52,10 +52,9 @@ export function createSettings({ dialog, openButton, form, nameInput, genderGrou
     nameInput.value = settings.name;
     for (const radio of genderGroup.querySelectorAll('input')) radio.checked = radio.value === settings.gender;
 
-    const { voice, exact } = pickVoice(settings.gender);
+    const { voice } = pickVoice(settings.gender);
     if (!speech.supported) note.textContent = 'Этот браузер не умеет озвучивать текст.';
     else if (!voice) note.textContent = 'Браузер не нашёл русских голосов. Ответы будут читаться голосом по умолчанию.';
-    else if (!exact) note.textContent = `В системе нет ${settings.gender === 'male' ? 'мужского' : 'женского'} русского голоса — разница достигается высотой тона.`;
     else note.textContent = '';
   }
 

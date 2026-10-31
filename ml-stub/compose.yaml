@@ -8,7 +8,7 @@ services:
     volumes:
       - .:/src/ml-stub:ro
       - ../web/js/mock:/src/web/js/mock:ro
-    command: sh -c "cp -r /src /app && cd /app/ml-stub && rm -rf node_modules && npm ci --no-audit --no-fund && exec node worker.mjs"
+    command: sh -c "rm -rf /app && cp -r /src /app && cd /app/ml-stub && rm -rf node_modules && npm ci --no-audit --no-fund --fetch-timeout=15000 --fetch-retries=3 && exec node worker.mjs"
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     networks:

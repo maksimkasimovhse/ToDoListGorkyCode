@@ -2,9 +2,9 @@
 // Подключается из js/api.js: в режиме mock на все запросы, в режиме auto — на маршруты, которых нет в бэкенде.
 import { handleMessage, undoByToken } from './assistant.js';
 import { NOW, TIMEZONE } from './clock.js';
-import { listItems, overdueItems, present, searchItems, undatedTasks, alive } from './queries.js';
+import { alive, conflicts, listItems, overdueItems, present, searchItems, undatedTasks } from './queries.js';
 import { normalize } from './nlu.js';
-import { clone, dropSession, findItem, getDb, nextStamp, persist, remember, resetDb, session } from './store.js';
+import { blankItem, clone, dropSession, findItem, getDb, nextStamp, persist, remember, resetDb, session } from './store.js';
 
 const listeners = new Set();
 
@@ -45,6 +45,20 @@ function route(method, path, query, body) {
   }
 
   if (method === 'GET' && path === '/api/items') return ok(listForApi(query));
+
+  if (method === 'POST' && path === '/api/items') {
+    const { allow_conflicts: allowConflicts, ...fields } = body || {};
+    if (!fields.title || !['task', 'reminder', 'meeting'].includes(fields.type)) return fail(400, 'validation', 'Нужны тип и название');
+    if (fields.type === 'meeting' && !allowConflicts) {
+      const busy = conflicts(fields.start_at, fields.end_at);
+      if (busy.length) return { status: 409, body: { error: { code: 'meeting_conflict', message: 'Время пересекается с другими встречами.', conflicts: busy.map(present) } } };
+    }
+    const at = nextStamp();
+    const item = blankItem({ ...fields, created_at: at, updated_at: at });
+    getDb().items.push(item);
+    persist();
+    return { status: 201, body: present(item) };
+  }
 
   if (method === 'GET' && path === '/api/items/undated') {
     const items = undatedTasks();

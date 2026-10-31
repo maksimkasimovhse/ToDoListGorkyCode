@@ -53,6 +53,65 @@ input { font: inherit; color: inherit; }
 }
 .source-badge.is-offline { background: var(--danger-soft); color: var(--danger); }
 
+/* ---------- Состояния страницы: загрузка и вход ---------- */
+
+body.is-booting .topbar,
+body.is-booting .layout,
+body.is-booting .login { visibility: hidden; }
+body.is-auth .topbar,
+body.is-auth .layout { display: none; }
+
+/* ---------- Страница входа ---------- */
+
+.login {
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 24px 16px;
+}
+.login[hidden] { display: none; }
+.login__brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 500; }
+.login__brand .brand__logo { width: 40px; height: 40px; }
+.login__brand .brand__logo svg { width: 27px; height: 27px; }
+.login__card {
+  width: min(380px, 100%); padding: 28px; border-radius: var(--radius); background: var(--panel);
+  box-shadow: 0 10px 40px rgba(35, 38, 74, .1);
+}
+.login__title { margin: 0 0 18px; font-size: 20px; font-weight: 500; }
+.login__note { margin: -6px 0 14px; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13px; color: var(--ink-2); }
+.login__note[hidden] { display: none; }
+.login__card .field { margin-bottom: 16px; }
+.login__card .field input { height: 40px; padding: 0 12px; border: 1px solid var(--faint); border-radius: 8px; background: #fff; font-size: 14px; width: 100%; }
+.login__card .field input:focus { outline: 0; border-color: var(--accent); }
+.login__password { position: relative; display: block; }
+.login__password input { padding-right: 40px; }
+.login__eye {
+  position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+}
+.login__eye:hover { background: var(--soft); color: var(--ink); }
+.login__eye[aria-pressed="true"] { color: var(--accent); }
+.login__eye svg { width: 18px; height: 18px; }
+.login__error { min-height: 1.2em; margin: -4px 0 8px; font-size: 13px; color: var(--danger); }
+.login__error:empty { display: none; }
+.login__submit { width: 100%; height: 42px; border-radius: 10px; font-size: 14px; }
+.login__submit:disabled { opacity: .7; }
+.login__demo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.login__demo[hidden] { display: none; }
+.login__demo-label { font-size: 12px; color: var(--muted); }
+.login__demo-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.login__demo .btn-ghost { padding: 6px 14px; font-size: 13px; }
+
+/* ---------- Меню профиля ---------- */
+
+.profile-wrap { position: relative; }
+.menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 170px; padding: 6px;
+  border-radius: 12px; background: var(--panel); box-shadow: 0 8px 30px rgba(35, 38, 74, .18);
+}
+.menu[hidden] { display: none; }
+.menu__name { padding: 8px 10px 6px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu__item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; }
+.menu__item:hover { background: var(--soft); color: var(--danger); }
+
 /* ---------- Сетка ---------- */
 
 .layout {
@@ -213,11 +272,6 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 
 /* ---------- Правая панель «Мои записи» ---------- */
 
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 12px 4px; }
-.tab { padding: 3px 10px; border: 1px solid var(--faint); border-radius: 999px; background: #fff; font-size: 11px; }
-.tab:hover { border-color: var(--accent); }
-.tab.is-active { background: #dcdde8; border-color: #dcdde8; }
-.planner__body { flex: 1; overflow-y: auto; padding: 4px 12px 16px; }
 .planner__empty { margin-top: 40px; text-align: center; font-size: 13px; color: var(--muted); }
 
 .day { margin-bottom: 14px; }
@@ -233,7 +287,7 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .slot__dot--reminder { border-color: var(--reminder); }
 
 .pcard {
-  position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 42px;
+  position: relative; display: flex; align-items: center; gap: 8px; min-height: 42px;
   padding: 7px 24px 7px 10px; border-left: 4px solid var(--muted); border-radius: 8px; cursor: pointer;
 }
 .pcard--meeting { background: var(--meeting-bg); border-color: var(--meeting); }
@@ -245,11 +299,6 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .pcard__title { font-size: 13px; overflow-wrap: anywhere; }
 .pcard__note { font-size: 11px; color: var(--ink-2); }
 .pcard--overdue .pcard__time { color: var(--danger); }
-.pcard__check {
-  flex: none; width: 16px; height: 16px; margin-top: 1px; padding: 0;
-  border: 1.5px solid var(--ink-2); border-radius: 50%; background: #fff;
-}
-.pcard__check:hover { background: var(--accent-soft); }
 .pcard__del {
   position: absolute; top: 3px; right: 4px; padding: 0 4px; border: 0; background: transparent;
   font-size: 15px; line-height: 1; color: var(--ink-2); opacity: 0;
@@ -257,7 +306,8 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .pcard:hover .pcard__del,
 .pcard:focus-within .pcard__del { opacity: .7; }
 .pcard__del:hover { opacity: 1; color: var(--danger); }
-.pcard.is-skeleton { cursor: default; animation: breathe 1.2s ease-in-out infinite; }
+.slot--plain { grid-template-columns: minmax(0, 1fr); }
+.timeline--plain::before { display: none; }
 
 .is-flash { animation: flash 1.8s ease-out; }
 @keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px rgba(63, 66, 120, .35); } 100% { box-shadow: 0 0 0 0 rgba(63, 66, 120, 0); } }
@@ -268,6 +318,8 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .dialog::backdrop { background: rgba(35, 38, 74, .3); }
 .dialog__title { margin: 0 0 16px; font-size: 17px; font-weight: 500; }
 .dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+/* Все кнопки окон одного размера */
+.dialog__actions button { flex: 1 1 0; min-height: 36px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field__label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .field__hint { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
@@ -283,9 +335,219 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .btn-primary { padding: 4px 14px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; }
 .btn-primary:hover { background: var(--ink); }
 
+/* ---------- Ручное добавление записи ---------- */
+
+.planner__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 12px; border-bottom: 1px solid var(--line); }
+.planner__head .panel__title { border-bottom: 0; }
+.add-btn {
+  flex: none; width: 28px; height: 28px; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: var(--accent); color: #fff;
+  transition: background .15s, transform .15s;
+}
+.add-btn:hover { background: var(--ink); transform: scale(1.06); }
+.add-btn svg { width: 16px; height: 16px; }
+
+.choice--types { margin-bottom: 14px; }
+.choice--types span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; font-size: 12px; }
+.choice--types .dot { width: 7px; height: 7px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field input[type="date"],
+.field input[type="time"],
+.field select { height: 34px; padding: 0 10px; border: 1px solid var(--faint); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; color: var(--ink); }
+.field input[type="date"]:focus,
+.field input[type="time"]:focus,
+.field select:focus { outline: 0; border-color: var(--accent); }
+.item-form__actions { display: grid; grid-template-columns: 1fr 1fr; }
+/* «Сохранить» — на всю ширину под дополнительными кнопками */
+.item-form__actions [type="submit"] { grid-column: 1 / -1; }
+.dialog:has(.item-form) { position: fixed; }
+.dialog__close {
+  position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); transition: background .15s, color .15s;
+}
+.dialog__close:hover { background: var(--soft); color: var(--ink); }
+.dialog__close svg { width: 16px; height: 16px; }
+/* Дополнительные кнопки встают в тот же сетчатый ряд: сверху «Удалить» и «Выполнено», снизу «Отмена» и «Сохранить» */
+.item-form__extra { display: contents; }
+.btn-ghost--danger { color: var(--danger); }
+.btn-ghost--danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+.choice input:disabled + span { opacity: .45; cursor: default; }
+.choice input:disabled:checked + span { opacity: 1; }
+.choice label:has(input:disabled) { cursor: default; }
+.choice label:has(input:disabled):hover span { border-color: var(--faint); }
+.choice input:disabled:checked + span,
+.choice label:has(input:disabled:checked):hover span { border-color: var(--accent); }
+.item-form__hint { margin-top: -6px; margin-bottom: 4px; }
+.item-form__hint[hidden] { display: none; }
+.item-form__error { min-height: 1em; margin: 4px 0 0; font-size: 12px; color: var(--danger); }
+.item-form__error:empty { display: none; }
+.item-form__conflict {
+  margin-top: 6px; padding: 10px 12px; border-radius: 8px;
+  background: var(--danger-soft); font-size: 12px; line-height: 1.45; color: var(--ink);
+}
+.item-form__conflict ul { margin: 4px 0; padding-left: 18px; }
+.item-form__conflict span { color: var(--ink-2); }
+
+.pcard { transition: opacity .18s ease, transform .18s ease; }
+.pcard.is-removing { opacity: 0; transform: translateX(14px); }
+
+/* ---------- Календарь в «Мои записи» ---------- */
+
+.planner__head { gap: 8px; }
+.planner__head .panel__title { margin-right: auto; }
+.add-btn--ghost { background: transparent; color: var(--ink-2); }
+.add-btn--ghost:hover { background: var(--soft); color: var(--ink); transform: none; }
+.add-btn[hidden] { display: none; }
+.icon-collapse { display: none; }
+body.is-calendar-full .icon-expand { display: none; }
+body.is-calendar-full .icon-collapse { display: block; }
+
+.views { display: flex; gap: 2px; margin: 10px 12px 0; padding: 2px; border-radius: 999px; background: var(--soft); }
+.views__btn { flex: 1; padding: 5px 8px; border: 0; border-radius: 999px; background: transparent; font-size: 12px; color: var(--ink-2); }
+.views__btn.is-active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(35, 38, 74, .15); }
+
+.calendar { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cal-toolbar { display: flex; align-items: center; gap: 6px; padding: 12px 12px 6px; }
+.cal-title { font-size: 15px; font-weight: 500; }
+.cal-spacer { flex: 1; }
+.cal-nav { width: 28px; height: 28px; padding: 0; border: 1px solid var(--faint); border-radius: 50%; background: #fff; font-size: 16px; line-height: 1; }
+.cal-nav:hover { border-color: var(--accent); }
+.cal-today { padding: 4px 10px; }
+.cal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; display: flex; flex-direction: column; }
+.cal-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
+
+/* узкий месяц */
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 2px; font-size: 10px; text-align: center; color: var(--muted); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-day {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 40px; padding: 4px 0 3px;
+  border: 0; border-radius: 10px; background: transparent; font-size: 12px; color: var(--ink);
+}
+.cal-day:hover { background: var(--soft); }
+.cal-day.is-other { color: var(--faint); }
+.cal-day.is-selected { background: var(--accent-soft); }
+.cal-day__num { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; }
+.cal-day.is-today .cal-day__num { background: var(--accent); color: #fff; }
+.cal-dots { display: flex; align-items: center; gap: 2px; height: 6px; }
+.cal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+.cal-dot--meeting { background: var(--meeting); }
+.cal-dot--task { background: var(--task); }
+.cal-dot--reminder { background: var(--reminder); }
+.cal-dot.is-done { opacity: .35; }
+.cal-dot-more { font-style: normal; font-size: 8px; line-height: 1; color: var(--muted); }
+.cal-daylist { margin-top: 14px; padding-top: 4px; border-top: 1px solid var(--line); }
+.cal-agenda { padding-top: 4px; }
+
+/* плашки записей */
+.cal-chip {
+  display: flex; align-items: center; gap: 5px; height: 19px; padding: 0 6px; border-left: 3px solid var(--muted); border-radius: 4px;
+  background: var(--soft); font-size: 11px; white-space: nowrap; overflow: hidden; cursor: pointer;
+}
+.cal-chip--meeting { background: var(--meeting-bg); border-color: var(--meeting); }
+.cal-chip--task { background: var(--task-bg); border-color: var(--task); }
+.cal-chip--reminder { background: var(--reminder-bg); border-color: var(--reminder); }
+.cal-chip__time { flex: none; color: var(--ink-2); }
+.cal-chip__title { overflow: hidden; text-overflow: ellipsis; }
+.cal-chip.is-done { opacity: .5; }
+.cal-chip.is-done .cal-chip__title { text-decoration: line-through; }
+.cal-chip.is-selected { box-shadow: 0 0 0 2px var(--accent); }
+.cal-chip.is-flash,
+.week-ev.is-flash { animation: flash 1.8s ease-out; }
+
+/* закрытые записи — бледные и зачёркнутые */
+.pcard.is-done { opacity: .55; }
+.pcard.is-done .pcard__title { text-decoration: line-through; }
+
+/* месяц во весь экран */
+.cal--full .cal-body { padding: 0 16px 16px; }
+.cal--full .cal-toolbar { padding: 14px 16px 8px; }
+.cal--full .cal-title { font-size: 18px; }
+.cal-month--full { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cal-month--full .cal-weekdays { padding-bottom: 4px; font-size: 12px; }
+.cal-month--full .cal-grid { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cal-cell { min-width: 0; min-height: 0; padding: 4px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
+.cal-cell.is-other { background: #fafafd; }
+.cal-cell.is-other .cal-cell__num { color: var(--faint); }
+.cal-cell.is-selected { background: var(--accent-soft); }
+.cal-cell__num { display: inline-block; min-width: 20px; margin-bottom: 3px; padding: 0 4px; border-radius: 10px; font-size: 12px; text-align: center; }
+.cal-cell.is-today .cal-cell__num { background: var(--accent); color: #fff; }
+.cal-cell__items { display: flex; flex-direction: column; gap: 2px; }
+.cal-more { align-self: flex-start; padding: 0 4px; border: 0; background: none; font-size: 11px; color: var(--accent); }
+.cal-more:hover { text-decoration: underline; }
+.cal-pop {
+  position: absolute; z-index: 5; width: 240px; max-height: 60%; display: flex; flex-direction: column; padding: 10px;
+  border-radius: 12px; background: var(--panel); box-shadow: 0 8px 30px rgba(35, 38, 74, .22);
+}
+.cal-pop__title { margin-bottom: 6px; font-size: 12px; font-weight: 500; }
+.cal-pop__list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }
+
+/* неделя со шкалой времени */
+.week { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.week__head,
+.week__allday { display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.week__corner { display: block; }
+.week__label { padding: 4px 6px; font-size: 10px; color: var(--muted); text-align: right; }
+.week__day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; border: 0; border-left: 1px solid var(--line); background: transparent; }
+.week__day:hover { background: var(--soft); }
+.week__day.is-selected { background: var(--accent-soft); }
+.week__dow { font-size: 11px; color: var(--muted); }
+.week__num { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 15px; }
+.week__day.is-today .week__num { background: var(--accent); color: #fff; }
+.week__allday-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 3px; border-left: 1px solid var(--line); }
+.week__scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.week__grid { position: relative; display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); height: calc(24 * var(--hour)); }
+.week__times { position: relative; }
+.week__time { position: absolute; right: 6px; transform: translateY(-50%); font-size: 10px; color: var(--muted); }
+.week__col {
+  position: relative; border-left: 1px solid var(--line);
+  background-image: linear-gradient(to bottom, var(--line) 1px, transparent 1px); background-size: 100% var(--hour);
+}
+.week__col.is-today { background-color: #f9f9ff; }
+.week__now { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--danger); z-index: 2; pointer-events: none; }
+.week-ev {
+  position: absolute; z-index: 1; padding: 2px 6px; border-left: 3px solid var(--muted); border-radius: 6px;
+  background: var(--soft); font-size: 11px; line-height: 1.3; overflow: hidden; cursor: pointer;
+}
+.week-ev--meeting { background: var(--meeting-bg); border-color: var(--meeting); }
+.week-ev--task { background: var(--task-bg); border-color: var(--task); }
+.week-ev--reminder { background: var(--reminder-bg); border-color: var(--reminder); }
+.week-ev__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.week-ev__time { color: var(--ink-2); font-size: 10px; }
+.week-ev.is-done { opacity: .5; }
+.week-ev.is-done .week-ev__title { text-decoration: line-through; }
+.week-ev.is-selected { box-shadow: 0 0 0 2px var(--accent); z-index: 3; }
+
+/* календарь на всю страницу: слева узкий чат, справа календарь */
+body.is-calendar-full .recent { display: none; }
+body.is-calendar-full .layout { grid-template-columns: 340px minmax(0, 1fr); }
+body.is-calendar-full .assistant__tools .switch span:last-child { display: none; }
+body.is-calendar-full .views { max-width: 320px; }
+
+/* Переезд панелей при разворачивании (document.startViewTransition): каждая панель плавно меняет
+   место и размер, «Последнее» растворяется. Содержимое прижато к левому верхнему углу и не растягивается */
+.recent { view-transition-name: panel-recent; }
+.assistant { view-transition-name: panel-assistant; }
+.planner { view-transition-name: panel-planner; }
+::view-transition-group(*) { animation-duration: .42s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-group(panel-recent),
+::view-transition-group(panel-assistant),
+::view-transition-group(panel-planner) { overflow: clip; border-radius: var(--radius); background: var(--panel); }
+::view-transition-old(panel-assistant),
+::view-transition-new(panel-assistant),
+::view-transition-old(panel-planner),
+::view-transition-new(panel-planner) { height: 100%; width: 100%; object-fit: none; object-position: left top; }
+::view-transition-old(panel-assistant),
+::view-transition-old(panel-planner) { animation: vt-fade-out .2s ease both; }
+::view-transition-new(panel-assistant),
+::view-transition-new(panel-planner) { animation: vt-fade-in .3s ease .12s both; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+
 /* ---------- Уведомления ---------- */
 
-.toasts { position: fixed; bottom: 20px; left: 50%; z-index: 10; display: flex; flex-direction: column; gap: 8px; transform: translateX(-50%); }
+/* Над колонкой «Мои записи»: не закрывают поле ввода, длинный текст переносится */
+.toasts { position: fixed; right: 28px; bottom: 28px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: min(286px, calc(100vw - 56px)); }
 .toast {
   display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 10px;
   background: var(--ink); color: #fff; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, .15);
@@ -297,12 +559,16 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: minmax(0, 1fr) 290px; }
   .recent { display: none; }
+  body.is-calendar-full .layout { grid-template-columns: 300px minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
+  body.is-calendar-full .layout { grid-template-columns: minmax(0, 1fr); }
+  body.is-calendar-full .assistant { display: none; }
+  body.is-calendar-full .planner { max-height: none; height: calc(100vh - 68px); }
+  .toasts { right: 16px; left: 16px; align-items: stretch; max-width: none; }
   .layout { height: auto; grid-template-columns: minmax(0, 1fr); }
   .assistant { height: 78vh; }
   .planner { max-height: 70vh; }
-  .planner__body { flex: 0 1 auto; }
   .assistant__tools .switch span:last-child { display: none; }
   .msg { max-width: 94%; }
 }
