@@ -272,11 +272,6 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 
 /* ---------- Правая панель «Мои записи» ---------- */
 
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 12px 4px; }
-.tab { padding: 3px 10px; border: 1px solid var(--faint); border-radius: 999px; background: #fff; font-size: 11px; }
-.tab:hover { border-color: var(--accent); }
-.tab.is-active { background: #dcdde8; border-color: #dcdde8; }
-.planner__body { flex: 1; overflow-y: auto; padding: 4px 12px 16px; }
 .planner__empty { margin-top: 40px; text-align: center; font-size: 13px; color: var(--muted); }
 
 .day { margin-bottom: 14px; }
@@ -313,7 +308,6 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .pcard__del:hover { opacity: 1; color: var(--danger); }
 .slot--plain { grid-template-columns: minmax(0, 1fr); }
 .timeline--plain::before { display: none; }
-.pcard.is-skeleton { cursor: default; animation: breathe 1.2s ease-in-out infinite; }
 
 .is-flash { animation: flash 1.8s ease-out; }
 @keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px rgba(63, 66, 120, .35); } 100% { box-shadow: 0 0 0 0 rgba(63, 66, 120, 0); } }
@@ -413,10 +407,7 @@ body.is-calendar-full .icon-collapse { display: block; }
 .views__btn { flex: 1; padding: 5px 8px; border: 0; border-radius: 999px; background: transparent; font-size: 12px; color: var(--ink-2); }
 .views__btn.is-active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(35, 38, 74, .15); }
 
-.planner__list { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.planner__list[hidden] { display: none; }
 .calendar { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.calendar[hidden] { display: none; }
 .cal-toolbar { display: flex; align-items: center; gap: 6px; padding: 12px 12px 6px; }
 .cal-title { font-size: 15px; font-weight: 500; }
 .cal-spacer { flex: 1; }
@@ -527,13 +518,31 @@ body.is-calendar-full .icon-collapse { display: block; }
 .week-ev.is-done .week-ev__title { text-decoration: line-through; }
 .week-ev.is-selected { box-shadow: 0 0 0 2px var(--accent); z-index: 3; }
 
-/* календарь на всю страницу: слева он, справа узкий чат */
+/* календарь на всю страницу: слева узкий чат, справа календарь */
 body.is-calendar-full .recent { display: none; }
-body.is-calendar-full .layout { grid-template-columns: minmax(0, 1fr) 340px; }
-body.is-calendar-full .planner { grid-column: 1; grid-row: 1; }
-body.is-calendar-full .assistant { grid-column: 2; grid-row: 1; }
+body.is-calendar-full .layout { grid-template-columns: 340px minmax(0, 1fr); }
 body.is-calendar-full .assistant__tools .switch span:last-child { display: none; }
 body.is-calendar-full .views { max-width: 320px; }
+
+/* Переезд панелей при разворачивании (document.startViewTransition): каждая панель плавно меняет
+   место и размер, «Последнее» растворяется. Содержимое прижато к левому верхнему углу и не растягивается */
+.recent { view-transition-name: panel-recent; }
+.assistant { view-transition-name: panel-assistant; }
+.planner { view-transition-name: panel-planner; }
+::view-transition-group(*) { animation-duration: .42s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-group(panel-recent),
+::view-transition-group(panel-assistant),
+::view-transition-group(panel-planner) { overflow: clip; border-radius: var(--radius); background: var(--panel); }
+::view-transition-old(panel-assistant),
+::view-transition-new(panel-assistant),
+::view-transition-old(panel-planner),
+::view-transition-new(panel-planner) { height: 100%; width: 100%; object-fit: none; object-position: left top; }
+::view-transition-old(panel-assistant),
+::view-transition-old(panel-planner) { animation: vt-fade-out .2s ease both; }
+::view-transition-new(panel-assistant),
+::view-transition-new(panel-planner) { animation: vt-fade-in .3s ease .12s both; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
 
 /* ---------- Уведомления ---------- */
 
@@ -550,6 +559,7 @@ body.is-calendar-full .views { max-width: 320px; }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: minmax(0, 1fr) 290px; }
   .recent { display: none; }
+  body.is-calendar-full .layout { grid-template-columns: 300px minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
   body.is-calendar-full .layout { grid-template-columns: minmax(0, 1fr); }
@@ -559,7 +569,6 @@ body.is-calendar-full .views { max-width: 320px; }
   .layout { height: auto; grid-template-columns: minmax(0, 1fr); }
   .assistant { height: 78vh; }
   .planner { max-height: 70vh; }
-  .planner__body { flex: 0 1 auto; }
   .assistant__tools .switch span:last-child { display: none; }
   .msg { max-width: 94%; }
 }

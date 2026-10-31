@@ -1,4 +1,4 @@
-// Календарь в панели «Мои записи»: месяц и неделя (с понедельника).
+// Панель «Мои записи»: календарь — неделя (с понедельника) и месяц.
 // Два режима: узкий (в панели) — мини-календарь с точками и список выбранного дня; полноэкранный —
 // месяц с плашками записей и неделя со шкалой времени. Данные — из GET /api/items за видимый период.
 import * as api from './api.js';
@@ -54,6 +54,8 @@ export function createCalendar({ root, onSelect, onOpen, onToggleDone, onDelete,
     selectedDay: todayKey(),
     full: false,
     items: new Map(), // dayKey → записи дня
+    overdue: [], // просроченные и без срока — только в узкой текущей неделе
+    undated: [],
     total: 0,
     selectedId: null,
     flashIds: new Set(),
@@ -80,10 +82,22 @@ export function createCalendar({ root, onSelect, onOpen, onToggleDone, onDelete,
     const seq = ++state.seq;
     state.flashIds = new Set(flash);
     const { start, end } = rangeOf(state.view, state.cursor);
+    // Текущая неделя заменяет прежний список «Ближайшие»: в ней же просроченные и задачи без срока [ФТ 8].
+    // Просроченные бэкенд в ответе не отдаёт (overdue всегда пустой): берём открытые задачи со сроком
+    // раньше сегодняшнего дня и оставляем те, что он сам пометил computed.overdue
+    const extras = state.view === 'week' && todayKey() >= start && todayKey() < end;
     try {
-      const result = await api.getItems({ from: startOfDayIso(start), to: startOfDayIso(end) });
+      const [result, undated, past] = await Promise.all([
+        api.getItems({ from: startOfDayIso(start), to: startOfDayIso(end) }),
+        extras ? api.getUndatedItems(['task']) : null,
+        extras ? api.getItems({ to: startOfDayIso(todayKey()), status: 'open', types: ['task'] }) : null,
+      ]);
       if (seq !== state.seq) return;
       const items = (result && result.items) || [];
+      const active = (list) => ((list && list.items) || []).filter((item) => item.status === 'open' || item.status === 'scheduled');
+      const shown = new Set(items.map((item) => item.id));
+      state.undated = active(undated).filter((item) => !shown.has(item.id));
+      state.overdue = active(past).filter((item) => item.computed && item.computed.overdue && !shown.has(item.id));
       const byDay = new Map();
       for (const item of items) {
         const key = itemDayKey(item, start, end);
@@ -293,10 +307,12 @@ export function createCalendar({ root, onSelect, onOpen, onToggleDone, onDelete,
     // Текущая неделя показывается с сегодняшнего дня — «до конца недели»
     const from = todayKey() >= start && todayKey() < end ? todayKey() : start;
     const wrap = el('div', 'cal-agenda');
+    if (state.overdue.length) wrap.append(cards.section('Просрочено', state.overdue, { overdue: true }));
     for (let key = from; key < end; key = addDays(key, 1)) {
       const items = dayItems(key);
       if (items.length) wrap.append(cards.section(dayTitle(key), items));
     }
+    if (state.undated.length) wrap.append(cards.section('Без срока', state.undated, { plain: true }));
     if (!wrap.childElementCount) wrap.append(el('p', 'planner__empty', 'На эти дни записей нет'));
     body.replaceChildren(wrap, ...(note() ? [note()] : []));
   }
@@ -462,25 +478,20 @@ export function createCalendar({ root, onSelect, onOpen, onToggleDone, onDelete,
   });
 
   return {
-    /** Показать вид 'month' | 'week' */
-    show(view) {
-      if (state.view !== view) {
+    /** Показать вид 'month' | 'week'; today — вернуться к текущему периоду */
+    show(view, { today = false, flash = [] } = {}) {
+      if (state.view !== view || today) {
         state.view = view;
         state.cursor = todayKey();
         state.selectedDay = todayKey();
       }
-      root.hidden = false;
-      return refresh();
-    },
-    hide() {
-      root.hidden = true;
-      closePopover();
+      return refresh({ flash });
     },
     refresh,
     setSelected,
     setFull(full) {
       state.full = full;
-      if (!root.hidden) render();
+      render();
     },
     /** День, выбранный в календаре: его предлагает окно новой записи */
     selectedDay: () => state.selectedDay,

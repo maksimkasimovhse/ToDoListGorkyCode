@@ -129,7 +129,7 @@
     <aside class="panel planner" id="planner-panel" aria-label="Мои записи">
       <div class="planner__head">
         <h2 class="panel__title">Мои записи</h2>
-        <button class="add-btn add-btn--ghost" id="calendar-full" type="button" aria-label="Развернуть календарь на весь экран" title="На весь экран" hidden>
+        <button class="add-btn add-btn--ghost" id="calendar-full" type="button" aria-label="Развернуть календарь на весь экран" title="На весь экран">
           <svg class="icon-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
           <svg class="icon-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"/></svg>
         </button>
@@ -138,20 +138,10 @@
         </button>
       </div>
       <div class="views" id="planner-views" role="tablist" aria-label="Вид">
-        <button class="views__btn is-active" type="button" role="tab" aria-selected="true" data-view="list">Список</button>
+        <button class="views__btn is-active" type="button" role="tab" aria-selected="true" data-view="week">Неделя</button>
         <button class="views__btn" type="button" role="tab" aria-selected="false" data-view="month">Месяц</button>
-        <button class="views__btn" type="button" role="tab" aria-selected="false" data-view="week">Неделя</button>
       </div>
-      <div class="planner__list" id="planner-list">
-        <div class="tabs" id="planner-tabs" role="tablist">
-          <button class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="upcoming">Ближайшие</button>
-          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="today">Сегодня</button>
-          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="tomorrow">Завтра</button>
-          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="week">Неделя</button>
-        </div>
-        <div class="planner__body" id="planner-body"></div>
-      </div>
-      <div class="calendar" id="calendar" hidden></div>
+      <div class="calendar" id="calendar"></div>
     </aside>
   </main>
 
