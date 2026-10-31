@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from adapter import (_all_day, _anchors_context, _generic_record_cancellation,
-                     _has_explicit_time, _history_context, _map_command,
+                     _has_explicit_time, _history_context, _imperative_reminder, _map_command,
                      _mutation, _protect_explicit_target, _record_cancellation)
 from planner_model.gigachat_contract import (_relative_day, _relative_offset,
                                               _relative_period, normalize_create,
@@ -64,6 +64,8 @@ class AdapterTest(unittest.TestCase):
         self.assertIn("time", result["missing"])
 
     def test_reminder_without_spoken_time_requires_clarification(self):
+        self.assertTrue(_imperative_reminder("Напомни через два часа проверить почту"))
+        self.assertFalse(_imperative_reminder("Покажи напоминания"))
         result = _map_command({
             "action": "create", "entity": "reminder", "missing_fields": [],
             "data": {"title": "Позвонить маме", "remind_at": "2026-11-08T18:04:00+03:00"},

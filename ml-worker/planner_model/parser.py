@@ -169,6 +169,8 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool,
         {"role": "system", "content": ROUTE_PROMPT},
         {"role": "user", "content": user_content},
     ], ROUTE_SCHEMA, timeout)
+    if re.search(r"\bнапомни(?:ть)?\b", text, flags=re.IGNORECASE):
+        route["action"], route["entity"] = "create", "reminder"
     try:
         action = route["action"]
         if action == "search":

@@ -66,6 +66,10 @@ def _all_day(text: str) -> bool:
     return bool(re.search(r"\b(?:на\s+)?(?:целый|весь)\s+день\b", text, flags=re.IGNORECASE))
 
 
+def _imperative_reminder(text: str) -> bool:
+    return bool(re.search(r"\bнапомни(?:ть)?\b", text, flags=re.IGNORECASE))
+
+
 def _has_explicit_time(text: str) -> bool:
     # A meeting has no default clock time. Do not accept model-invented 00:00.
     return bool(re.search(
@@ -223,6 +227,8 @@ def _parse_single(request: dict, text: str) -> dict:
     user_content = f"{context}{_anchors_context(request)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
     route = _gigachat_chat([{"role": "system", "content": INTENT_PROMPT}, {"role": "user", "content": user_content}], INTENT_SCHEMA, 60)
     intent, entity = route["intent"], route["entity"]
+    if _imperative_reminder(text):
+        intent, entity = "create", "reminder"
     if intent == "cancel" and _record_cancellation(text):
         intent = "delete"
     if intent in ("create", "list", "search"):
