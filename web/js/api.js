@@ -267,6 +267,11 @@ export const resetSession = (sessionId) =>
 export const login = (loginName, password) =>
   request('POST', '/api/auth/login', { body: { login: loginName, password }, timeoutMs: 15000, missing: 'error' });
 
+// Привязка бота MAX (max-bot/README.md)
+export const getChannels = () => request('GET', '/api/channels', { missing: 'error' });
+export const unlinkChannel = (channel) => request('DELETE', `/api/channels/${encodeURIComponent(channel)}`, { missing: 'error' });
+export const createLinkCode =(channel) => request('POST', `/api/channels/${encodeURIComponent(channel)}/link-code`, { missing: 'error' });
+
 export const logout = () => request('POST', '/api/auth/logout', { missing: () => null });
 
 export const getMe = () =>

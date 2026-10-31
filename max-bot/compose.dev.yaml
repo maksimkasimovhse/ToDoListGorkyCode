@@ -1,0 +1,16 @@
+# Локальная проверка без настоящего MAX: поддельный API (dev/fake-max.mjs) на порту 9900.
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d
+# В max-bot/.env: MAX_API_URL=http://fake-max:9900, MAX_BOT_TOKEN — любое непустое значение.
+services:
+  fake-max:
+    image: node:22-alpine
+    volumes:
+      - ./dev:/dev-src:ro
+    command: node /dev-src/fake-max.mjs
+    ports:
+      - "127.0.0.1:9900:9900"
+    networks:
+      - backend
+  max-bot:
+    depends_on:
+      - fake-max

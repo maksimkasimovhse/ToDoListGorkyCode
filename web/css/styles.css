@@ -110,7 +110,12 @@ body.is-auth .layout { display: none; }
 .menu[hidden] { display: none; }
 .menu__name { padding: 8px 10px 6px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu__item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; }
-.menu__item:hover { background: var(--soft); color: var(--danger); }
+.menu__item:hover { background: var(--soft); }
+.menu__item[hidden] { display: none; }
+.menu__item--danger:hover { color: var(--danger); }
+.menu__item:disabled { opacity: .6; cursor: default; }
+.menu__status { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+.menu__status[hidden] { display: none; }
 
 /* ---------- Сетка ---------- */
 
@@ -322,6 +327,7 @@ button.card:hover { box-shadow: 0 0 0 1px var(--faint); }
 .dialog__actions button { flex: 1 1 0; min-height: 36px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field__label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.field .switch { font-size: 13px; }
 .field__hint { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
 .field input[type="text"] { height: 34px; padding: 0 10px; border: 1px solid var(--faint); border-radius: 8px; background: #fff; font-size: 13px; }
 .field input[type="text"]:focus { outline: 0; border-color: var(--accent); }

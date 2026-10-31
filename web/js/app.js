@@ -8,6 +8,8 @@ import { hasDate } from './items.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
 import { createLogin } from './login.js';
+import { createMaxLink } from './max-link.js';
+import { createNotifier } from './notifications.js';
 import { createRecent } from './recent.js';
 import { createReminders } from './reminders.js';
 import { createSettings, stripName } from './settings.js';
@@ -15,6 +17,8 @@ import { configureClock, formatDayMonth, formatTime, now } from './time.js';
 import { createRecognizer, recognitionSupported, speech } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
+// Создаётся в init(), когда известно серверное «сейчас»
+let notifier = null;
 
 const store = {
   get(key) {
@@ -326,6 +330,7 @@ const settings = createSettings({
   },
 });
 
+
 // ---------- Микрофон ----------
 
 function toggleMic() {
@@ -387,6 +392,7 @@ $('selection-clear').addEventListener('click', () => setSelected(null));
 function refreshLists(flash = []) {
   calendar.refresh({ flash });
   recent.refresh();
+  if (notifier) notifier.refresh();
   if (CONFIG.MODE !== 'mock') reminders.sync();
 }
 
@@ -539,9 +545,21 @@ $('new-dialog').addEventListener('click', async () => {
 const profileButton = $('profile-btn');
 const profileMenu = $('profile-menu');
 
+// Бот в MAX: состояние привязки обновляется при каждом открытии меню
+const maxLink = createMaxLink({
+  button: $('max-link-btn'),
+  label: $('max-link-label'),
+  status: $('max-link-status'),
+  unlinkButton: $('max-unlink-btn'),
+  toast: (text) => toast(text),
+  onPick: () => setMenu(false),
+});
+$('max-link-btn').hidden = CONFIG.MODE === 'mock';
+
 function setMenu(open) {
   profileMenu.hidden = !open;
   profileButton.setAttribute('aria-expanded', String(open));
+  if (open && CONFIG.MODE !== 'mock') maxLink.render();
 }
 
 profileButton.addEventListener('click', (event) => {
@@ -665,6 +683,26 @@ function onReminder({ item, reply }) {
   say(text);
 }
 
+// За 15 минут и в момент начала. Напоминание в момент срабатывания ведёт себя как событие сервера:
+// реплика в чате, звук и озвучка. Если системное уведомление не показано, сообщаем на странице.
+function onDue(item, kind, text, shown) {
+  if (item.type === 'reminder' && kind === 'now') {
+    // С бэкендом реплику, звук и озвучку в момент напоминания даёт reminders.js — здесь только системное уведомление
+    if (CONFIG.MODE === 'mock') onReminder({ item });
+    return;
+  }
+  beep();
+  if (!shown) toast(`${text.title}. ${text.body}`);
+}
+
+function offerNotifications() {
+  if (!notifier.canAsk) return;
+  toast('Показывать уведомления о встречах и напоминаниях?', {
+    label: 'Включить',
+    run: () => notifier.enable(),
+  });
+}
+
 /** Напоминания, сработавшие, пока страницы не было */
 function onMissedReminders(items) {
   const shown = items.slice(0, 5).map((item) => `«${item.title}» в ${formatTime(item.remind_at)}`).join(', ');
@@ -770,11 +808,24 @@ async function startSession() {
     console.warn('Профиль не загрузился', error);
   }
   await loadHistory();
+  // Уведомления браузера создаются один раз: startSession повторяется после повторного входа
+  if (!notifier) {
+    notifier = createNotifier({
+      loadItems: ({ from, to }) => api.getItems({ from, to, types: 'meeting,reminder' }),
+      onDue,
+      toggle: $('notify-toggle'),
+      note: $('notify-note'),
+    });
+    // Разрешение могли поменять в настройках браузера, пока страница была открыта
+    $('settings-btn').addEventListener('click', () => notifier.render());
+  }
   // Напоминания — раньше списков: refreshLists тоже запускает их проверку и забрала бы «пропущенные» как обычные
   if (CONFIG.MODE !== 'mock') await reminders.start();
   // Сохранённый вид панели (неделя / месяц) восстанавливается при входе
   setView(panel.view);
   recent.refresh();
+  notifier.refresh();
+  offerNotifications();
   rememberVisit();
 
   if (wired) return;
