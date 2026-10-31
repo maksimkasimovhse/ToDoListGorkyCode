@@ -60,20 +60,29 @@ func checkPassword(password, encoded string) bool {
 }
 
 func (a *Auth) Login(ctx context.Context, login, password, address string) (LoginResult, error) {
+	user, err := a.Verify(ctx, login, password, address)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	return a.Issue(ctx, user, a.ttl)
+}
+
+// Verify проверяет логин и пароль с общим ограничением попыток, не создавая сессию.
+func (a *Auth) Verify(ctx context.Context, login, password, address string) (domain.User, error) {
 	allowed, err := a.sessions.AllowLogin(ctx, address)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
+		return domain.User{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
 	}
 	if !allowed {
-		return LoginResult{}, ErrLoginLimit
+		return domain.User{}, ErrLoginLimit
 	}
 	login = strings.ToLower(strings.TrimSpace(login))
 	if len(login) == 0 || len(login) > 64 || len(password) == 0 || len(password) > 1024 {
-		return LoginResult{}, ErrCredentials
+		return domain.User{}, ErrCredentials
 	}
 	user, err := a.users.GetByLogin(ctx, login)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
-		return LoginResult{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
+		return domain.User{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
 	}
 	hash := user.PasswordHash
 	if errors.Is(err, repository.ErrNotFound) {
@@ -81,9 +90,14 @@ func (a *Auth) Login(ctx context.Context, login, password, address string) (Logi
 	}
 	valid := checkPassword(password, hash)
 	if !valid || err != nil || !user.Active {
-		return LoginResult{}, ErrCredentials
+		return domain.User{}, ErrCredentials
 	}
-	if a.ttl <= 0 {
+	return user, nil
+}
+
+// Issue создаёт сессию пользователя со сроком ttl. Боты мессенджеров получают сессию дольше обычной.
+func (a *Auth) Issue(ctx context.Context, user domain.User, ttl time.Duration) (LoginResult, error) {
+	if ttl <= 0 {
 		return LoginResult{}, ErrAuthUnavailable
 	}
 	for range 3 {
@@ -92,7 +106,7 @@ func (a *Auth) Login(ctx context.Context, login, password, address string) (Logi
 			return LoginResult{}, err
 		}
 		token := base64.RawURLEncoding.EncodeToString(secret)
-		expires := time.Now().UTC().Add(a.ttl)
+		expires := time.Now().UTC().Add(ttl)
 		created, err := a.sessions.Create(ctx, domain.AuthSession{Key: SessionKey(token), UserID: user.ID, ExpiresAt: expires})
 		if err != nil {
 			return LoginResult{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
@@ -102,6 +116,18 @@ func (a *Auth) Login(ctx context.Context, login, password, address string) (Logi
 		}
 	}
 	return LoginResult{}, ErrAuthUnavailable
+}
+
+// User возвращает активного пользователя по id.
+func (a *Auth) User(ctx context.Context, id string) (domain.User, error) {
+	user, err := a.users.GetByID(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && !user.Active) {
+		return user, repository.ErrUnauthenticated
+	}
+	if err != nil {
+		return user, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
+	}
+	return user, nil
 }
 
 func (a *Auth) Authenticate(ctx context.Context, token string) (domain.AuthSession, domain.User, error) {

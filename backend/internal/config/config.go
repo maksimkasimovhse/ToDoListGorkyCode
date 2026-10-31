@@ -22,6 +22,12 @@ type Config struct {
 	MLResultGroup    string
 	MessageTimeout   time.Duration
 	EmbeddingsURL    string
+	// Уведомления в мессенджеры
+	BotToken          string
+	ChannelSessionTTL time.Duration
+	NotifyInterval    time.Duration
+	NotifyAckTimeout  time.Duration
+	MaxBotURL         string
 }
 
 // Load читает переменные окружения. Файл .env автоматически не загружается.
@@ -35,6 +41,11 @@ func Load() (Config, error) {
 		MLRequestStream: "planner:ml:requests", MLResultStream: "planner:ml:results",
 		MLResultGroup: "planner-backend", MessageTimeout: 15 * time.Second,
 		EmbeddingsURL: os.Getenv("EMBEDDINGS_URL"),
+		BotToken:      os.Getenv("BOT_SERVICE_TOKEN"), MaxBotURL: os.Getenv("MAX_BOT_URL"),
+		ChannelSessionTTL: 365 * 24 * time.Hour, NotifyInterval: 5 * time.Second, NotifyAckTimeout: 5 * time.Minute,
+	}
+	if cfg.BotToken != "" && len(cfg.BotToken) < 32 {
+		return Config{}, fmt.Errorf("BOT_SERVICE_TOKEN must be at least 32 characters")
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -73,10 +84,13 @@ func Load() (Config, error) {
 		cfg.ShutdownTimeout = duration
 	}
 	for name, target := range map[string]*time.Duration{
-		"SESSION_TTL":       &cfg.SessionTTL,
-		"DATABASE_TIMEOUT":  &cfg.DatabaseTimeout,
-		"MIGRATION_TIMEOUT": &cfg.MigrationTimeout,
-		"MESSAGE_TIMEOUT":   &cfg.MessageTimeout,
+		"SESSION_TTL":         &cfg.SessionTTL,
+		"DATABASE_TIMEOUT":    &cfg.DatabaseTimeout,
+		"MIGRATION_TIMEOUT":   &cfg.MigrationTimeout,
+		"MESSAGE_TIMEOUT":     &cfg.MessageTimeout,
+		"CHANNEL_SESSION_TTL": &cfg.ChannelSessionTTL,
+		"NOTIFY_INTERVAL":     &cfg.NotifyInterval,
+		"NOTIFY_ACK_TIMEOUT":  &cfg.NotifyAckTimeout,
 	} {
 		if value, ok := os.LookupEnv(name); ok {
 			duration, err := time.ParseDuration(value)

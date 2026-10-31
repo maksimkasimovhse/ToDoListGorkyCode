@@ -7,6 +7,7 @@ import { hasDate } from './items.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
 import { createLogin } from './login.js';
+import { createMaxLink } from './max-link.js';
 import { createNotifier } from './notifications.js';
 import { createPlanner } from './planner.js';
 import { createRecent } from './recent.js';
@@ -282,6 +283,12 @@ const settings = createSettings({
   onChange: ({ name }) => {
     $('assistant-name').textContent = name;
   },
+});
+
+// Бот в MAX: состояние привязки обновляется при каждом открытии настроек
+const maxLink = createMaxLink({ button: $('max-link-btn'), note: $('max-link-note') });
+$('settings-btn').addEventListener('click', () => {
+  if (CONFIG.MODE !== 'mock') maxLink.render();
 });
 
 // ---------- Микрофон ----------

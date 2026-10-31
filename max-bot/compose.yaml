@@ -1,0 +1,35 @@
+# Бот MAX рядом с приложением из корневого compose.yaml. Сначала поднимите его: docker compose up -d --build --wait
+services:
+  max-bot:
+    image: node:22-alpine
+    restart: unless-stopped
+    # Исходники только для чтения: контейнер копирует их к себе и ставит зависимости внутри.
+    # Разбор ответов, даты и подписи записей берутся из web/js — те же, что на сайте
+    volumes:
+      - .:/src/max-bot:ro
+      - ../web/js:/src/web/js:ro
+      # Кеш npm между перезапусками: без него каждый старт заново качает пакеты из реестра
+      - npm-cache:/root/.npm
+    command: sh -c "rm -rf /app && cp -r /src /app && cd /app/max-bot && rm -rf node_modules && npm ci --prefer-offline --no-audit --no-fund --fetch-timeout=15000 --fetch-retries=3 && exec node bot.mjs"
+    environment:
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:?Задайте MAX_BOT_TOKEN в max-bot/.env}
+      BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?Задайте BOT_SERVICE_TOKEN в max-bot/.env}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api2.max.ru}
+      MAX_ALLOWED_USERS: ${MAX_ALLOWED_USERS:-}
+      BACKEND_URL: ${BACKEND_URL:-http://backend:8080}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+      # platform-api2.max.ru подписан Russian Trusted Root CA (Минцифры), его нет в наборе Node
+      NODE_EXTRA_CA_CERTS: /src/max-bot/certs/russian_trusted_root_ca_pem.crt
+    networks:
+      - backend
+
+volumes:
+  npm-cache:
+    name: npmcache
+
+networks:
+  # Сеть, которую создаёт docker compose в корне репозитория (проект backend)
+  backend:
+    external: true
+    name: ${BACKEND_NETWORK:-backend_default}

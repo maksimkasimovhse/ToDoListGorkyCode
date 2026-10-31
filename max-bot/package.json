@@ -1,0 +1,16 @@
+{
+  "name": "max-bot",
+  "private": true,
+  "type": "module",
+  "description": "Бот MAX: уведомления о встречах и напоминаниях, создание записей кнопками",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node bot.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "redis": "4.7.0"
+  }
+}

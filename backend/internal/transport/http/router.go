@@ -10,7 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func NewRouter(messages *service.Messages, items *service.Items, auth *service.Auth, webDir string) http.Handler {
+// channels необязателен: без него маршруты уведомлений и ботов не подключаются.
+func NewRouter(messages *service.Messages, items *service.Items, auth *service.Auth, webDir string, channels ...Channels) http.Handler {
 	router := chi.NewRouter()
 	router.Get("/healthz", health)
 	handler := &Handler{messages: messages, items: items, auth: auth}
@@ -34,10 +35,13 @@ func NewRouter(messages *service.Messages, items *service.Items, auth *service.A
 		protected.Patch("/api/items/{id}", handler.updateItem)
 		protected.Delete("/api/items/{id}", handler.deleteItem)
 	})
+	if len(channels) > 0 && channels[0].Service != nil {
+		(&channelHandler{Channels: channels[0]}).mount(router, handler.requireAuth)
+	}
 	files := http.FileServer(http.Dir(webDir))
 	// Неизвестные API-маршруты не должны попадать в обработчик файлов.
 	router.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/internal/") {
 			http.NotFound(w, r)
 			return
 		}
