@@ -11,7 +11,6 @@ backend/               Go-сервер: API, раздача фронта и би
 web/                   HTML, CSS и JavaScript
 ml-worker/             GigaChat + Embeddings-2, обработчик Redis Streams
 ml-stub/               отдельная заглушка для тестов без внешней модели
-telegram-bot/          Telegram-бот (Node.js): второй клиент того же API
 max-bot/               бот MAX (Node.js): уведомления, утренняя сводка, создание записей кнопками
 compose.yaml           приложение, ML worker, PostgreSQL и Redis
 .env.example           настройки общего запуска
@@ -59,18 +58,6 @@ docker compose logs -f backend
 Бэкенд требует вход. Тестовые аккаунты (создаёт миграция, см. [backend/docs/auth.md](backend/docs/auth.md)):
 `demo1` / `DemoPass1!` и `demo2` / `DemoPass2!`. На странице входа две кнопки подставляют их данные.
 У каждого пользователя свои записи и свои чаты. Старые записи демопользователя принадлежат `demo1`.
-
-## Telegram-бот
-
-С ассистентом можно говорить и в Telegram: тот же API, те же записи, уточнения с кнопками и уведомления
-за 15 минут до встреч и напоминаний. Бот — отдельный сервис, бэкенд о нём не знает: [telegram-bot](telegram-bot/README.md).
-
-После приложения и ML-заглушки, с токеном от @BotFather в `telegram-bot/.env`:
-
-```powershell
-cd telegram-bot
-docker compose up -d
-```
 
 ## Бот MAX
 

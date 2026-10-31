@@ -1,5 +1,5 @@
-// Когда и что сообщать о встречах и напоминаниях. Без window и document: модуль общий
-// для уведомлений браузера (notifications.js) и Telegram-бота (telegram-bot/notify.mjs).
+// Когда и что сообщать о встречах и напоминаниях в уведомлениях браузера (notifications.js).
+// Без window и document: правила проверяются отдельно от страницы.
 import { plural } from './dom.js';
 import { formatTime } from './time.js';
 
