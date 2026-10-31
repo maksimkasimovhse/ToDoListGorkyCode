@@ -43,7 +43,10 @@ input { font: inherit; color: inherit; }
   width: 32px; height: 32px; border-radius: 50%; border: 0;
   display: grid; place-items: center; background: var(--ink); color: #fff;
 }
-.brand__logo svg { width: 22px; height: 22px; }
+.brand__logo { position: relative; overflow: hidden; }
+/* В logo.jpg круг 566×566 px с центром в (327, 319) на сером фоне 660×644: растягиваем так,
+   чтобы круг совпал с контейнером и фон обрезался */
+.brand__logo img { position: absolute; width: 117.9%; height: auto; left: -8.4%; top: -7%; max-width: none; }
 .profile svg { width: 20px; height: 20px; }
 .file-warning { padding: 10px 16px; background: var(--danger-soft); color: var(--danger); font-weight: 500; text-align: center; }
 .topbar__right { display: flex; align-items: center; gap: 12px; }
@@ -70,7 +73,6 @@ body.is-auth .layout { display: none; }
 .login[hidden] { display: none; }
 .login__brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 500; }
 .login__brand .brand__logo { width: 40px; height: 40px; }
-.login__brand .brand__logo svg { width: 27px; height: 27px; }
 .login__card {
   width: min(380px, 100%); padding: 28px; border-radius: var(--radius); background: var(--panel);
   box-shadow: 0 10px 40px rgba(35, 38, 74, .1);
