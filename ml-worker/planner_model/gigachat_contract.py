@@ -153,7 +153,7 @@ def normalize_search(route: dict, text: str) -> dict:
     }
 
 
-def normalize_create(command: dict, route: dict, text: str, now: datetime) -> dict:
+def normalize_create(command: dict, route: dict, text: str, now: datetime, anchors: dict | None = None) -> dict:
     if command.get("action") != "create" or not isinstance(command.get("data"), dict):
         return command
     data = command["data"]
@@ -199,7 +199,7 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime) -> di
     for field in ("query", "scope", "period_start", "period_end"):
         data.pop(field, None)
     when = data.get("when")
-    relative = _relative_day(text, now)
+    relative = _relative_day(text, now, anchors)
     if relative:
         target_day = datetime.fromisoformat(relative[0]).date()
         if isinstance(data.get("due_date"), str):
@@ -210,7 +210,7 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime) -> di
                 data[field] = parsed.replace(year=target_day.year, month=target_day.month,
                                              day=target_day.day, tzinfo=now.tzinfo).isoformat()
     if isinstance(when, dict) and isinstance(when.get("at"), str):
-        when_relative = _relative_day(when.get("source") or "", now)
+        when_relative = _relative_day(when.get("source") or "", now, anchors)
         if when_relative:
             parsed = datetime.fromisoformat(when["at"])
             day = datetime.fromisoformat(when_relative[0]).date()
@@ -233,22 +233,40 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime) -> di
     return command
 
 
-def _relative_day(text: str, now: datetime) -> tuple[str, str, str] | None:
-    # Resolve unambiguous day words independently of the LLM's date arithmetic.
+def _relative_day(text: str, now: datetime, anchors: dict | None = None) -> tuple[str, str, str] | None:
+    # Resolve dates independently of the LLM's date arithmetic. Go supplies
+    # anchors in the user's timezone, including nearest weekdays.
     words = (("послезавтра", 2), ("позавчера", -2), ("сегодня", 0),
              ("завтра", 1), ("вчера", -1))
     for word, days in words:
         if re.search(rf"(?<!\w){word}(?!\w)", text, flags=re.IGNORECASE):
-            day = (now + timedelta(days=days)).date()
+            value = anchors.get({-2: "day_before_yesterday", -1: "yesterday", 0: "today", 1: "tomorrow", 2: "day_after_tomorrow"}[days]) if isinstance(anchors, dict) else None
+            day = datetime.fromisoformat(value).date() if isinstance(value, str) else (now + timedelta(days=days)).date()
             start = datetime.combine(day, time.min, tzinfo=now.tzinfo)
             end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=now.tzinfo)
             return start.isoformat(), end.isoformat(), word
+    weekdays = {
+        "mon": r"понедельник\w*", "tue": r"вторник\w*", "wed": r"сред\w*",
+        "thu": r"четверг\w*", "fri": r"пятниц\w*", "sat": r"суббот\w*", "sun": r"воскресень\w*",
+    }
+    if isinstance(anchors, dict):
+        for code, pattern in weekdays.items():
+            match = re.search(rf"\b(?:в\s+|на\s+)?(?P<next>следующ\w*\s+)?{pattern}\b", text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            source = "following_week_weekday" if match.group("next") else "next_weekday"
+            value = anchors.get(source, {}).get(code) if isinstance(anchors.get(source), dict) else None
+            if isinstance(value, str):
+                day = datetime.fromisoformat(value).date()
+                start = datetime.combine(day, time.min, tzinfo=now.tzinfo)
+                end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=now.tzinfo)
+                return start.isoformat(), end.isoformat(), match.group(0)
     return None
 
 
-def normalize_list(raw: dict, route: dict, text: str, now: datetime) -> dict:
+def normalize_list(raw: dict, route: dict, text: str, now: datetime, anchors: dict | None = None) -> dict:
     data = {}
-    relative = _relative_day(text, now)
+    relative = _relative_day(text, now, anchors)
     if relative:
         data["period_start"], data["period_end"], data["time_expression"] = relative
     elif raw.get("period_start") and raw.get("period_end"):

@@ -134,7 +134,7 @@ def _gigachat_chat(messages: list[dict], schema: dict, timeout: int) -> dict:
         raise ModelError("GigaChat вернул неожиданный ответ") from exc
 
 
-def _history_context(history: list[dict] | None) -> str:
+def _history_context(history: list[dict] | None, anchors: dict | None = None) -> str:
     if not history:
         return ""
     turns = []
@@ -145,11 +145,16 @@ def _history_context(history: list[dict] | None) -> str:
         value = str(turn.get("text") or "").strip()
         if value:
             turns.append(f"{role}: {value[:2000]}")
-    return "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(turns) + "\n" if turns else ""
+    context = "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(turns) + "\n" if turns else ""
+    if isinstance(anchors, dict):
+        context += "Опорные даты от backend (используй их, не вычисляй дни недели сам):\n"
+        context += json.dumps(anchors, ensure_ascii=False) + "\n"
+    return context
 
 
-def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, history: list[dict] | None = None) -> dict:
-    user_content = f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
+def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool,
+                    history: list[dict] | None = None, anchors: dict | None = None) -> dict:
+    user_content = f"{_history_context(history, anchors)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
     route = _gigachat_chat([
         {"role": "system", "content": ROUTE_PROMPT},
         {"role": "user", "content": user_content},
@@ -163,7 +168,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
                 {"role": "system", "content": LIST_PROMPT},
                 {"role": "user", "content": user_content},
             ], LIST_SCHEMA, timeout)
-            command = normalize_list(raw, route, text, now)
+            command = normalize_list(raw, route, text, now, anchors)
         elif action == "create":
             if route["entity"] == "meeting":
                 raw = _gigachat_chat([
@@ -184,7 +189,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_content},
                 ], SCHEMA, timeout)
-            command = normalize_create(command, route, text, now)
+            command = normalize_create(command, route, text, now, anchors)
         elif action == "unsupported":
             command = {"action": "unsupported", "entity": route["entity"],
                        "data": {}, "missing_fields": []}
@@ -200,7 +205,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
 def parse_request(text: str, now: datetime, *, provider: str | None = None,
                   api_key: str | None = None, folder_id: str | None = None,
                   timeout: int = 120, validate: bool = True,
-                  history: list[dict] | None = None) -> dict:
+                  history: list[dict] | None = None, anchors: dict | None = None) -> dict:
     """Parse one text request using Ollama, YandexGPT or GigaChat."""
     if not text.strip():
         raise ValueError("Запрос пуст")
@@ -208,10 +213,10 @@ def parse_request(text: str, now: datetime, *, provider: str | None = None,
         raise ValueError("now должен содержать часовой пояс")
     provider = provider or os.getenv("PLANNER_PROVIDER", "ollama")
     if provider == "gigachat":
-        return _parse_gigachat(text, now, timeout, validate, history)
+        return _parse_gigachat(text, now, timeout, validate, history, anchors)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"},
+        {"role": "user", "content": f"{_history_context(history, anchors)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"},
     ]
     if provider == "ollama":
         payload = {

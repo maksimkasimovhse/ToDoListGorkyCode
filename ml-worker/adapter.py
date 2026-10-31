@@ -98,6 +98,15 @@ def _history_context(request: dict) -> str:
     return "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(rendered) + "\n"
 
 
+def _anchors_context(request: dict) -> str:
+    anchors = request.get("anchors")
+    if not isinstance(anchors, dict):
+        return ""
+    # Dates are calculated by Go in the user's timezone. The model only maps
+    # Russian wording to these values; it must not calculate weekdays itself.
+    return "Опорные даты от backend (используй их, не вычисляй дни недели сам):\n" + json.dumps(anchors, ensure_ascii=False) + "\n"
+
+
 def _map_command(command: dict, text: str = "") -> dict:
     action, entity, data, missing = command["action"], command["entity"], command["data"], command["missing_fields"]
     if action == "create":
@@ -175,13 +184,14 @@ def _mutation(intent: str, entity: str, raw: dict) -> dict:
 def _parse_single(request: dict, text: str) -> dict:
     now = datetime.fromisoformat(request["now"])
     context = _history_context(request)
-    user_content = f"{context}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
+    user_content = f"{context}{_anchors_context(request)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
     route = _gigachat_chat([{"role": "system", "content": INTENT_PROMPT}, {"role": "user", "content": user_content}], INTENT_SCHEMA, 60)
     intent, entity = route["intent"], route["entity"]
     if intent == "cancel" and _record_cancellation(text):
         intent = "delete"
     if intent in ("create", "list", "search"):
-        command = parse_request(text, now, provider="gigachat", timeout=60, history=request.get("history"))
+        command = parse_request(text, now, provider="gigachat", timeout=60,
+                                history=request.get("history"), anchors=request.get("anchors"))
         return _map_command(command, text)
     if intent in ("update", "delete", "complete", "reopen"):
         focus = request.get("focus")

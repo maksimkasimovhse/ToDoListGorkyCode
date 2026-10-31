@@ -1,6 +1,8 @@
 import unittest
 
-from adapter import _all_day, _has_explicit_time, _history_context, _map_command, _mutation, _record_cancellation
+from adapter import _all_day, _anchors_context, _has_explicit_time, _history_context, _map_command, _mutation, _record_cancellation
+from planner_model.gigachat_contract import _relative_day
+from datetime import datetime
 
 
 class AdapterTest(unittest.TestCase):
@@ -59,6 +61,17 @@ class AdapterTest(unittest.TestCase):
         self.assertTrue(_all_day("добавь на целый день"))
         self.assertFalse(_has_explicit_time("Поставь встречу завтра"))
         self.assertTrue(_has_explicit_time("Поставь встречу завтра в 9"))
+
+    def test_weekday_comes_from_backend_anchors(self):
+        now = datetime.fromisoformat("2026-10-31T18:03:00+03:00")
+        anchors = {"next_weekday": {"thu": "2026-11-05"},
+                   "following_week_weekday": {"thu": "2026-11-12"}}
+        date, _, _ = _relative_day("создай встречу в четверг", now, anchors)
+        self.assertTrue(date.startswith("2026-11-05"))
+        date, _, _ = _relative_day("создай встречу в следующий четверг", now, anchors)
+        self.assertTrue(date.startswith("2026-11-12"))
+        context = _anchors_context({"anchors": anchors})
+        self.assertIn("2026-11-05", context)
 
 
 if __name__ == "__main__":
