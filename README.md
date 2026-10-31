@@ -11,6 +11,7 @@ backend/               Go-сервер: API, раздача фронта и би
 web/                   HTML, CSS и JavaScript
 ml-worker/             GigaChat + Embeddings-2, обработчик Redis Streams
 ml-stub/               отдельная заглушка для тестов без внешней модели
+max-bot/               бот MAX (Node.js): уведомления, утренняя сводка, создание записей кнопками
 compose.yaml           приложение, ML worker, PostgreSQL и Redis
 .env.example           настройки общего запуска
 .dockerignore          исключения общего контекста сборки
@@ -59,6 +60,18 @@ docker compose logs -f backend
 Бэкенд требует вход. Тестовые аккаунты (создаёт миграция, см. [backend/docs/auth.md](backend/docs/auth.md)):
 `demo1` / `DemoPass1!` и `demo2` / `DemoPass2!`. На странице входа две кнопки подставляют их данные.
 У каждого пользователя свои записи и свои чаты. Старые записи демопользователя принадлежат `demo1`.
+
+## Бот MAX
+
+Уведомления за 15 минут до встреч и напоминаний и в момент начала, утренняя сводка, тихие часы и создание
+записей кнопками. Расписание уведомлений считает бэкенд, бот доставляет: [max-bot](max-bot/README.md).
+
+С токеном бота в `max-bot/.env` и общим `BOT_SERVICE_TOKEN` в корневом `.env`:
+
+```bash
+cd max-bot
+docker compose up -d
+```
 
 ## Если не работает
 

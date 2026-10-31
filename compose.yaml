@@ -19,6 +19,10 @@ services:
       MESSAGE_TIMEOUT: ${MESSAGE_TIMEOUT:-90s}
       EMBEDDINGS_URL: http://ml-worker:8090
       SESSION_TTL: ${SESSION_TTL:-168h}
+      # Уведомления в MAX: общий секрет с ботом (max-bot/.env) и ссылка на бота для кнопки «Подключить MAX»
+      BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:-}
+      MAX_BOT_URL: ${MAX_BOT_URL:-}
+      CHANNEL_SESSION_TTL: ${CHANNEL_SESSION_TTL:-8760h}
     depends_on:
       postgres:
         condition: service_healthy

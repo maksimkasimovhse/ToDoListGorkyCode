@@ -53,7 +53,7 @@ func TestMigrationsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	results, err := provider.Up(ctx)
-	if err != nil || len(results) != 5 {
+	if err != nil || len(results) != 6 {
 		t.Fatalf("first up: count=%d, err=%v", len(results), err)
 	}
 	results, err = provider.Up(ctx)
@@ -72,7 +72,7 @@ func TestMigrationsPostgres(t *testing.T) {
 		VALUES ($1, 'meeting', 'встреча', 'исходный запрос', 'scheduled')`, userID); err == nil {
 		t.Fatal("meeting without start/end was accepted")
 	}
-	for range 5 {
+	for range 6 {
 		if _, err := provider.Down(ctx); err != nil {
 			t.Fatal(err)
 		}

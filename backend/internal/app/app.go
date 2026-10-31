@@ -84,10 +84,19 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	messages := service.NewMessages(store, a.cfg.MessageTimeout, embedder)
 	items := service.NewItems(postgres.NewItems(db), embedder)
-	a.server.Handler = httptransport.NewRouter(messages, items, auth, a.cfg.WebDir)
+	notifications := postgres.NewNotifications(db)
+	channels := service.NewChannels(notifications, auth, a.cfg.ChannelSessionTTL)
+	a.server.Handler = httptransport.NewRouter(messages, items, auth, a.cfg.WebDir, httptransport.Channels{
+		Service: channels, BotToken: a.cfg.BotToken, BotLinks: map[string]string{"max": a.cfg.MaxBotURL},
+	})
 	workerCtx, cancelWorkers := context.WithCancel(ctx)
 	waitWorkers := bus.Start(workerCtx, store, messages.HandleResult, a.logger)
-	defer func() { cancelWorkers(); waitWorkers() }()
+	dispatcher := &service.Dispatcher{
+		Repo: notifications, Items: postgres.NewItems(db), Publisher: bus, Logger: a.logger,
+		Interval: a.cfg.NotifyInterval, AckTimeout: a.cfg.NotifyAckTimeout,
+	}
+	waitDispatcher := dispatcher.Start(workerCtx)
+	defer func() { cancelWorkers(); waitWorkers(); waitDispatcher() }()
 
 	serverErr := make(chan error, 1)
 	go func() {
