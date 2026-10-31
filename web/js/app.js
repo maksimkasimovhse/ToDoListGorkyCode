@@ -378,14 +378,9 @@ function toggleSelected(item) {
 
 function setSelected(item) {
   state.selected = item ? { id: item.id, title: item.title } : null;
-  $('selection').hidden = !item;
-  $('selection-title').textContent = item ? item.title : '';
   calendar.setSelected(item ? item.id : null);
   recent.setSelected(item ? item.id : null);
-  if (item) input.focus();
 }
-
-$('selection-clear').addEventListener('click', () => setSelected(null));
 
 // ---------- Ручные действия в списке (2.3) ----------
 

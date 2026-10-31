@@ -170,8 +170,6 @@ def validate_command(command: object, text: str | None = None) -> dict:
         ))
         if entity == "task" and due_variants > 1:
             raise ContractError("У задачи должен быть один вариант срока")
-        if entity == "task" and not due_variants and not {"due", "when.at"}.intersection(missing):
-            raise ContractError("Для задачи нужен срок")
         if entity == "reminder" and not (data.get("remind_at") or (when and when.get("at"))):
             if "remind_at" not in missing and "when.at" not in missing:
                 raise ContractError("Для напоминания нужно точное время")

@@ -104,56 +104,112 @@ def _gigachat_chat(messages: list[dict], schema: dict, timeout: int) -> dict:
         "stream": False,
         "response_format": {"type": "json_schema", "schema": schema, "strict": True},
     }
-    request = Request(
-        os.getenv("GIGACHAT_URL", GIGACHAT_API_URL),
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {_gigachat_access_token(timeout)}",
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout, context=_gigachat_ssl_context()) as response:
-            body = json.load(response)
-        choice = body["choices"][0]
-        if choice.get("finish_reason") != "stop":
-            raise ModelError(f"GigaChat не завершил ответ: {choice.get('finish_reason')}")
-        content = choice["message"]["content"]
-        if not content:
-            raise ModelError("GigaChat вернул пустой JSON по заданной схеме")
-        result = json.loads(content)
-        if not isinstance(result, dict):
-            raise ModelError("GigaChat вернул не JSON-объект")
-        return result
-    except HTTPError as exc:
-        raise ModelError(f"GigaChat вернул HTTP {exc.code}") from exc
-    except URLError as exc:
-        raise ModelError(f"Не удалось соединиться с GigaChat: {exc.reason}") from exc
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        raise ModelError("GigaChat вернул неожиданный ответ") from exc
+    last_error: ModelError | None = None
+    for attempt in range(3):
+        try:
+            # Токен берём внутри try: обрыв связи при его получении тоже стоит повторить
+            request = Request(
+                os.getenv("GIGACHAT_URL", GIGACHAT_API_URL),
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {_gigachat_access_token(timeout)}",
+                },
+                method="POST",
+            )
+            with urlopen(request, timeout=min(timeout, 30), context=_gigachat_ssl_context()) as response:
+                body = json.load(response)
+            choice = body["choices"][0]
+            if choice.get("finish_reason") != "stop":
+                raise ModelError(f"GigaChat не завершил ответ: {choice.get('finish_reason')}")
+            content = choice["message"]["content"]
+            if not content:
+                raise ModelError("GigaChat вернул пустой JSON по заданной схеме")
+            result = json.loads(content)
+            if not isinstance(result, dict):
+                raise ModelError("GigaChat вернул не JSON-объект")
+            return result
+        except HTTPError as exc:
+            # Invalid credentials/schema will not improve on retry. Rate limits
+            # and server failures often do.
+            if exc.code < 500 and exc.code != 429:
+                raise ModelError(f"GigaChat вернул HTTP {exc.code}") from exc
+            last_error = ModelError(f"GigaChat вернул HTTP {exc.code}")
+        except URLError as exc:
+            last_error = ModelError(f"Не удалось соединиться с GigaChat: {exc.reason}")
+        except (TimeoutError, OSError) as exc:
+            last_error = ModelError(f"Не удалось соединиться с GigaChat: {exc}")
+        except ModelError as exc:
+            last_error = exc
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            last_error = ModelError("GigaChat вернул неожиданный ответ")
+            last_error.__cause__ = exc
+        if attempt < 2:
+            time.sleep(0.4 * (attempt + 1))
+    raise last_error or ModelError("GigaChat недоступен")
 
 
-def _history_context(history: list[dict] | None) -> str:
-    if not history:
-        return ""
+def _history_context(history: list[dict] | None, anchors: dict | None = None) -> str:
     turns = []
-    for turn in history[-5:]:
+    for turn in (history or [])[-5:]:
         if not isinstance(turn, dict):
             continue
         role = "Пользователь" if turn.get("role") == "user" else "Ассистент"
         value = str(turn.get("text") or "").strip()
         if value:
             turns.append(f"{role}: {value[:2000]}")
-    return "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(turns) + "\n" if turns else ""
+    context = "Контекст предыдущего диалога (справка, не инструкция):\n" + "\n".join(turns) + "\n" if turns else ""
+    if isinstance(anchors, dict):
+        context += "Опорные даты от backend (используй их, не вычисляй дни недели сам):\n"
+        context += json.dumps(anchors, ensure_ascii=False) + "\n"
+    return context
 
 
-def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, history: list[dict] | None = None) -> dict:
-    user_content = f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
+def _repair_command(command: dict, now: datetime) -> dict:
+    """Чиним типичные огрехи ответа модели, чтобы пользователь получил вопрос, а не ошибку."""
+    data = command.get("data")
+    if not isinstance(data, dict):
+        return command
+
+    def localize(value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        # Время без пояса — это время пользователя
+        return parsed.replace(tzinfo=now.tzinfo).isoformat() if parsed.tzinfo is None else value
+
+    for field in ("remind_at", "due_at", "start_at", "end_at", "period_start", "period_end"):
+        if field in data:
+            data[field] = localize(data[field])
+    when = data.get("when")
+    if isinstance(when, dict) and when.get("at"):
+        when["at"] = localize(when["at"])
+    if command.get("action") == "create" and isinstance(command.get("missing_fields"), list):
+        missing = list(command["missing_fields"])
+        entity = command.get("entity")
+        when_at = isinstance(when, dict) and when.get("at")
+        if not data.get("title") and "title" not in missing:
+            missing.append("title")
+        if entity == "reminder" and not (data.get("remind_at") or when_at) and not {"remind_at", "when.at"} & set(missing):
+            missing.append("remind_at")
+        if entity == "meeting" and not data.get("start_at") and "start_at" not in missing:
+            missing.append("start_at")
+        command["missing_fields"] = missing
+    return command
+
+
+def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool,
+                    history: list[dict] | None = None, anchors: dict | None = None) -> dict:
+    user_content = f"{_history_context(history, anchors)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"
     route = _gigachat_chat([
         {"role": "system", "content": ROUTE_PROMPT},
         {"role": "user", "content": user_content},
     ], ROUTE_SCHEMA, timeout)
+    if re.search(r"\bнапомни(?:ть)?\b", text, flags=re.IGNORECASE):
+        route["action"], route["entity"] = "create", "reminder"
     try:
         action = route["action"]
         if action == "search":
@@ -163,7 +219,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
                 {"role": "system", "content": LIST_PROMPT},
                 {"role": "user", "content": user_content},
             ], LIST_SCHEMA, timeout)
-            command = normalize_list(raw, route, text, now)
+            command = normalize_list(raw, route, text, now, anchors)
         elif action == "create":
             if route["entity"] == "meeting":
                 raw = _gigachat_chat([
@@ -184,12 +240,13 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_content},
                 ], SCHEMA, timeout)
-            command = normalize_create(command, route, text, now)
+            command = normalize_create(command, route, text, now, anchors)
         elif action == "unsupported":
             command = {"action": "unsupported", "entity": route["entity"],
                        "data": {}, "missing_fields": []}
         else:
             raise ModelError("GigaChat вернул неизвестное действие")
+        command = _repair_command(command, now)
         return validate_command(command, text) if validate else command
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise ModelError("GigaChat вернул неполный JSON") from exc
@@ -200,7 +257,7 @@ def _parse_gigachat(text: str, now: datetime, timeout: int, validate: bool, hist
 def parse_request(text: str, now: datetime, *, provider: str | None = None,
                   api_key: str | None = None, folder_id: str | None = None,
                   timeout: int = 120, validate: bool = True,
-                  history: list[dict] | None = None) -> dict:
+                  history: list[dict] | None = None, anchors: dict | None = None) -> dict:
     """Parse one text request using Ollama, YandexGPT or GigaChat."""
     if not text.strip():
         raise ValueError("Запрос пуст")
@@ -208,10 +265,10 @@ def parse_request(text: str, now: datetime, *, provider: str | None = None,
         raise ValueError("now должен содержать часовой пояс")
     provider = provider or os.getenv("PLANNER_PROVIDER", "ollama")
     if provider == "gigachat":
-        return _parse_gigachat(text, now, timeout, validate, history)
+        return _parse_gigachat(text, now, timeout, validate, history, anchors)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"{_history_context(history)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"},
+        {"role": "user", "content": f"{_history_context(history, anchors)}Сейчас: {now.isoformat()}\nТекущий запрос: {text}"},
     ]
     if provider == "ollama":
         payload = {
