@@ -104,41 +104,51 @@ def _gigachat_chat(messages: list[dict], schema: dict, timeout: int) -> dict:
         "stream": False,
         "response_format": {"type": "json_schema", "schema": schema, "strict": True},
     }
-    request = Request(
-        os.getenv("GIGACHAT_URL", GIGACHAT_API_URL),
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {_gigachat_access_token(timeout)}",
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout, context=_gigachat_ssl_context()) as response:
-            body = json.load(response)
-        choice = body["choices"][0]
-        if choice.get("finish_reason") != "stop":
-            raise ModelError(f"GigaChat не завершил ответ: {choice.get('finish_reason')}")
-        content = choice["message"]["content"]
-        if not content:
-            raise ModelError("GigaChat вернул пустой JSON по заданной схеме")
-        result = json.loads(content)
-        if not isinstance(result, dict):
-            raise ModelError("GigaChat вернул не JSON-объект")
-        return result
-    except HTTPError as exc:
-        raise ModelError(f"GigaChat вернул HTTP {exc.code}") from exc
-    except URLError as exc:
-        raise ModelError(f"Не удалось соединиться с GigaChat: {exc.reason}") from exc
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        raise ModelError("GigaChat вернул неожиданный ответ") from exc
+    last_error: ModelError | None = None
+    for attempt in range(2):
+        request = Request(
+            os.getenv("GIGACHAT_URL", GIGACHAT_API_URL),
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {_gigachat_access_token(timeout)}",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=min(timeout, 30), context=_gigachat_ssl_context()) as response:
+                body = json.load(response)
+            choice = body["choices"][0]
+            if choice.get("finish_reason") != "stop":
+                raise ModelError(f"GigaChat не завершил ответ: {choice.get('finish_reason')}")
+            content = choice["message"]["content"]
+            if not content:
+                raise ModelError("GigaChat вернул пустой JSON по заданной схеме")
+            result = json.loads(content)
+            if not isinstance(result, dict):
+                raise ModelError("GigaChat вернул не JSON-объект")
+            return result
+        except HTTPError as exc:
+            # Invalid credentials/schema will not improve on retry. Rate limits
+            # and server failures often do.
+            if exc.code < 500 and exc.code != 429:
+                raise ModelError(f"GigaChat вернул HTTP {exc.code}") from exc
+            last_error = ModelError(f"GigaChat вернул HTTP {exc.code}")
+        except URLError as exc:
+            last_error = ModelError(f"Не удалось соединиться с GigaChat: {exc.reason}")
+        except ModelError as exc:
+            last_error = exc
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            last_error = ModelError("GigaChat вернул неожиданный ответ")
+            last_error.__cause__ = exc
+        if attempt == 0:
+            time.sleep(0.25)
+    raise last_error or ModelError("GigaChat недоступен")
 
 
 def _history_context(history: list[dict] | None, anchors: dict | None = None) -> str:
-    if not history:
-        return ""
     turns = []
-    for turn in history[-5:]:
+    for turn in (history or [])[-5:]:
         if not isinstance(turn, dict):
             continue
         role = "Пользователь" if turn.get("role") == "user" else "Ассистент"

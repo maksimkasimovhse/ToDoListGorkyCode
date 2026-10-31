@@ -145,9 +145,10 @@ def normalize_search(route: dict, text: str) -> dict:
         data["project_name"] = project
     if group:
         data["group_name"] = group
+    entity = _explicit_entity(text) or route["entity"]
     return {
         "action": "search",
-        "entity": route["entity"],
+        "entity": entity,
         "data": data,
         "missing_fields": [] if data["query"] else ["query"],
     }
@@ -200,6 +201,27 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime, ancho
         data.pop(field, None)
     when = data.get("when")
     relative = _relative_day(text, now, anchors)
+    relative_at = _relative_offset(text, now)
+    if relative_at is not None:
+        if command.get("entity") == "task":
+            data["due_at"] = relative_at.isoformat()
+            data.pop("due_date", None)
+            data.pop("period_start", None)
+            data.pop("period_end", None)
+        elif command.get("entity") == "reminder":
+            data["remind_at"] = relative_at.isoformat()
+        elif command.get("entity") == "meeting":
+            duration = _meeting_duration(data)
+            data["start_at"] = relative_at.isoformat()
+            data["end_at"] = (relative_at + duration).isoformat()
+    period = _relative_period(text, now, anchors)
+    if period and command.get("entity") == "task" and relative_at is None:
+        data.pop("due_date", None)
+        data.pop("due_at", None)
+        data["period_start"] = period[0]
+        # List filters use an exclusive end; a task deadline period is stored
+        # as the final instant of the requested range.
+        data["period_end"] = (datetime.fromisoformat(period[1]) - timedelta(seconds=1)).isoformat()
     if relative:
         target_day = datetime.fromisoformat(relative[0]).date()
         if isinstance(data.get("due_date"), str):
@@ -219,11 +241,14 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime, ancho
     if command["entity"] == "reminder" and not data.get("remind_at") and isinstance(when, dict):
         data["remind_at"] = when.get("at")
     if command.get("entity") == "meeting" and isinstance(data.get("start_at"), str):
-        if relative:
+        if relative and relative_at is None:
             parsed = datetime.fromisoformat(data["start_at"])
+            duration = _meeting_duration(data)
             day = datetime.fromisoformat(relative[0]).date()
-            data["start_at"] = parsed.replace(year=day.year, month=day.month, day=day.day,
-                                               tzinfo=now.tzinfo).isoformat()
+            start = parsed.replace(year=day.year, month=day.month, day=day.day, tzinfo=now.tzinfo)
+            data["start_at"] = start.isoformat()
+            if data.get("end_at"):
+                data["end_at"] = (start + duration).isoformat()
     title = data.get("title")
     if isinstance(title, str):
         source = (when.get("source") if isinstance(when, dict) else None) or data.get("time_expression")
@@ -231,6 +256,38 @@ def normalize_create(command: dict, route: dict, text: str, now: datetime, ancho
         if cleaned:
             data["title"] = cleaned
     return command
+
+
+def _meeting_duration(data: dict) -> timedelta:
+    try:
+        start = datetime.fromisoformat(data["start_at"])
+        end = datetime.fromisoformat(data["end_at"])
+        if end > start:
+            return end - start
+    except (KeyError, TypeError, ValueError):
+        pass
+    minutes = data.get("duration_minutes")
+    return timedelta(minutes=minutes if isinstance(minutes, int) and minutes > 0 else 60)
+
+
+def _relative_offset(text: str, now: datetime) -> datetime | None:
+    numbers = {"один": 1, "одну": 1, "два": 2, "две": 2, "три": 3, "четыре": 4,
+               "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9,
+               "десять": 10, "полчаса": 0.5}
+    match = re.search(
+        r"\bчерез\s+(?P<count>\d+|один|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|полчаса)\s*"
+        r"(?P<unit>час\w*|минут\w*|дн(?:я|ей|ь))?\b", text, flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    raw = match.group("count").lower()
+    count = float(raw) if raw.isdigit() else numbers[raw]
+    unit = (match.group("unit") or "час").lower()
+    if unit.startswith("минут") or raw == "полчаса":
+        return now + timedelta(minutes=count if raw != "полчаса" else 30)
+    if unit.startswith("дн"):
+        return now + timedelta(days=count)
+    return now + timedelta(hours=count)
 
 
 def _relative_day(text: str, now: datetime, anchors: dict | None = None) -> tuple[str, str, str] | None:
@@ -246,7 +303,7 @@ def _relative_day(text: str, now: datetime, anchors: dict | None = None) -> tupl
             end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=now.tzinfo)
             return start.isoformat(), end.isoformat(), word
     weekdays = {
-        "mon": r"понедельник\w*", "tue": r"вторник\w*", "wed": r"сред\w*",
+        "mon": r"понедельник\w*", "tue": r"вторник\w*", "wed": r"сред(?:а|у|ы|е)?",
         "thu": r"четверг\w*", "fri": r"пятниц\w*", "sat": r"суббот\w*", "sun": r"воскресень\w*",
     }
     if isinstance(anchors, dict):
@@ -264,11 +321,48 @@ def _relative_day(text: str, now: datetime, anchors: dict | None = None) -> tupl
     return None
 
 
+def _relative_period(text: str, now: datetime, anchors: dict | None = None) -> tuple[str, str, str] | None:
+    if not isinstance(anchors, dict):
+        return None
+    patterns = (
+        (r"\bдо\s+конца\s+(?:этой\s+)?недел\w*\b", "this_week", True),
+        (r"\b(?:на\s+)?этой\s+недел\w*\b", "this_week", False),
+        (r"\b(?:на\s+)?следующ\w*\s+недел\w*\b", "next_week", False),
+        (r"\b(?:на\s+)?прошл\w*\s+недел\w*\b", "last_week", False),
+        (r"\b(?:на\s+)?эт\w*\s+выходн\w*\b", "this_weekend", False),
+    )
+    for pattern, key, from_now in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        value = anchors.get(key)
+        if not match or not isinstance(value, list) or len(value) != 2:
+            continue
+        first = now if from_now else datetime.combine(datetime.fromisoformat(value[0]).date(), time.min, tzinfo=now.tzinfo)
+        # Go anchors use an inclusive final calendar date; contracts use [from, to).
+        last_day = datetime.fromisoformat(value[1]).date() + timedelta(days=1)
+        end = datetime.combine(last_day, time.min, tzinfo=now.tzinfo)
+        return first.isoformat(), end.isoformat(), match.group(0)
+    return None
+
+
+def _explicit_entity(text: str) -> str | None:
+    patterns = (("meeting", r"\b(?:встреч\w*|созвон\w*|совещани\w*)\b"),
+                ("reminder", r"\bнапоминани\w*\b"),
+                ("task", r"\bзадач\w*\b"),
+                ("note", r"\bзаметк\w*\b"))
+    for entity, pattern in patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return entity
+    return None
+
+
 def normalize_list(raw: dict, route: dict, text: str, now: datetime, anchors: dict | None = None) -> dict:
     data = {}
     relative = _relative_day(text, now, anchors)
+    period = _relative_period(text, now, anchors)
     if relative:
         data["period_start"], data["period_end"], data["time_expression"] = relative
+    elif period:
+        data["period_start"], data["period_end"], data["time_expression"] = period
     elif raw.get("period_start") and raw.get("period_end"):
         data["period_start"] = raw["period_start"]
         data["period_end"] = raw["period_end"]
@@ -279,9 +373,11 @@ def normalize_list(raw: dict, route: dict, text: str, now: datetime, anchors: di
         name = _explicit_name(route, field, text)
         if name:
             data[field] = name
+    # Generic plans must include every record type even if the model guessed one.
+    entity = _explicit_entity(text) or "all"
     return {
         "action": "list",
-        "entity": route["entity"],
+        "entity": entity,
         "data": data,
         "missing_fields": [] if data.get("period_start") and data.get("period_end") else ["period"],
     }

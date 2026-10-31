@@ -69,15 +69,42 @@ def _all_day(text: str) -> bool:
 def _has_explicit_time(text: str) -> bool:
     # A meeting has no default clock time. Do not accept model-invented 00:00.
     return bool(re.search(
-        r"\b(?:[01]?\d|2[0-3])[:.]\d{2}\b|\b(?:в|к)\s+(?:[0-9]|1\d|2[0-3])(?:\s*(?:час(?:а|ов)?))?\b|\b(?:утром|дн[её]м|вечером|ночью)\b",
+        r"\b(?:[01]?\d|2[0-3])[:.]\d{2}\b|\b(?:в|к)\s+(?:[0-9]|1\d|2[0-3])(?:\s*(?:час(?:а|ов)?))?\b|"
+        r"\b(?:утром|дн[её]м|вечером|ночью)\b|\bчерез\s+(?:\d+|один|одну|два|две|три|четыре|пять|полчаса)\s*(?:час\w*|минут\w*)?\b",
+        text, flags=re.IGNORECASE,
+    ))
+
+
+def _has_explicit_date(text: str) -> bool:
+    return bool(re.search(
+        r"\b(?:сегодня|завтра|послезавтра|вчера|понедельник\w*|вторник\w*|сред\w*|четверг\w*|пятниц\w*|суббот\w*|воскресень\w*)\b|"
+        r"\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b|\bчерез\s+(?:\d+|один|одну|два|две|три|четыре|пять|полчаса)\b",
         text, flags=re.IGNORECASE,
     ))
 
 
 def _record_cancellation(text: str) -> bool:
-    return bool(re.search(r"\bотмен\w*\b", text, flags=re.IGNORECASE) and re.search(
+    return bool(re.search(r"\b(?:отмен|удал)\w*\b", text, flags=re.IGNORECASE) and re.search(
         r"\b(?:встреч\w*|созвон\w*|задач\w*|напоминани\w*)\b", text, flags=re.IGNORECASE,
     ))
+
+
+def _generic_record_cancellation(text: str) -> bool:
+    if not _record_cancellation(text):
+        return False
+    remainder = re.sub(r"\b(?:отмен\w*|удал\w*|встреч\w*|созвон\w*|задач\w*|напоминани\w*|пожалуйста)\b",
+                       " ", text, flags=re.IGNORECASE)
+    return not re.sub(r"[^\w]+", "", remainder, flags=re.UNICODE)
+
+
+def _protect_explicit_target(text: str, raw: dict) -> dict:
+    # A named target ("с дизайнером", "про отчёт") must never silently fall
+    # back to the last focused item. An imprecise filter is still safe because
+    # Go will show candidates instead of deleting immediately.
+    if _record_cancellation(text) and not _generic_record_cancellation(text) and raw.get("reference") == "focus":
+        raw = dict(raw)
+        raw["reference"] = "filter"
+    return raw
 
 
 def _history_context(request: dict) -> str:
@@ -120,6 +147,15 @@ def _map_command(command: dict, text: str = "") -> dict:
         elif entity == "reminder":
             date, clock = _iso_parts(data.get("remind_at"))
             params.update({"date": date, "time": clock})
+            # A reminder requires a spoken date and time. Never accept values
+            # invented by the model when the phrase contains no temporal cue.
+            if text and not _has_explicit_date(text):
+                params.pop("date", None)
+                params.pop("time", None)
+                missing = [*missing, "remind_at"]
+            elif text and not _has_explicit_time(text):
+                params.pop("time", None)
+                missing = [*missing, "remind_at"]
         else:
             date, clock = _iso_parts(data.get("start_at"))
             _, end = _iso_parts(data.get("end_at"))
@@ -197,13 +233,14 @@ def _parse_single(request: dict, text: str) -> dict:
         focus = request.get("focus")
         # After creating/showing exactly one item, Go provides a trusted focus.
         # A bare "cancel the meeting" should target it rather than cancel a draft.
-        if intent == "delete" and _record_cancellation(text) and isinstance(focus, dict):
+        if intent == "delete" and _generic_record_cancellation(text) and isinstance(focus, dict):
             focus_type = focus.get("type")
             if entity == "all" or entity == focus_type:
                 return _result([{"intent": "delete", "params": {"target": {"ref": "focus"}}}])
         context = {key: request.get(key) for key in ("focus", "candidates") if request.get(key)}
         raw = _gigachat_chat([{"role": "system", "content": MUTATION_PROMPT},
                               {"role": "user", "content": user_content + "\nКонтекст: " + json.dumps(context, ensure_ascii=False)}], MUTATION_SCHEMA, 60)
+        raw = _protect_explicit_target(text, raw)
         return _mutation(intent, entity, raw)
     if intent in ("help", "cancel"):
         return _result([{"intent": intent, "params": {}}])

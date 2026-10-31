@@ -23,11 +23,35 @@ const (
 )
 
 func itemSearchText(item domain.Item) string {
-	parts := []string{item.Title, item.SourceText, strings.Join(item.Participants, " ")}
+	typeName := map[domain.ItemType]string{domain.ItemTask: "задача", domain.ItemReminder: "напоминание", domain.ItemMeeting: "встреча"}[item.Type]
+	// Repeat the title intentionally: identity words are more useful than the
+	// original imperative phrase when retrieving a specific record.
+	parts := []string{"Тип: " + typeName, "Название: " + item.Title, "Название: " + item.Title, item.SourceText, strings.Join(item.Participants, " ")}
 	if item.Location != nil {
 		parts = append(parts, *item.Location)
 	}
 	return strings.Join(parts, " | ")
+}
+
+func requestedType(query string) *domain.ItemType {
+	patterns := []struct {
+		kind  domain.ItemType
+		words []string
+	}{
+		{domain.ItemMeeting, []string{"встреч", "созвон", "совещан"}},
+		{domain.ItemReminder, []string{"напоминан"}},
+		{domain.ItemTask, []string{"задач"}},
+	}
+	lower := strings.ToLower(query)
+	for _, pattern := range patterns {
+		for _, word := range pattern.words {
+			if strings.Contains(lower, word) {
+				kind := pattern.kind
+				return &kind
+			}
+		}
+	}
+	return nil
 }
 
 func cosine(left, right []float64) float64 {
@@ -91,6 +115,11 @@ func lexicalAffinity(query map[string]struct{}, item domain.Item) float64 {
 // Search combines the existing lexical search with semantic similarity. If the
 // embedding service is unavailable, callers still get the lexical result.
 func (s *Items) Search(ctx context.Context, user string, filter repository.ItemFilter) ([]domain.Item, bool, error) {
+	if len(filter.Types) == 0 {
+		if kind := requestedType(filter.Query); kind != nil {
+			filter.Types = []domain.ItemType{*kind}
+		}
+	}
 	lexicalFilter := filter
 	lexicalFilter.Limit = 100
 	lexical, err := s.repo.Search(ctx, user, lexicalFilter)
