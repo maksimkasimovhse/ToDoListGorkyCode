@@ -36,18 +36,25 @@ type params struct {
 	Value           json.RawMessage    `json:"value"`
 }
 
-func execute(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
+func execute(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult, embedders ...Embedder) (domain.Reply, domain.DialogueState, error) {
+	var embedder Embedder
+	if len(embedders) > 0 {
+		embedder = embedders[0]
+	}
 	var reply domain.Reply
 	var next domain.DialogueState
-	err := repo.WithUserLock(ctx, m.UserID, func(locked repository.ItemRepository) error {
+	token, err := repo.WithUndo(ctx, m.UserID, func(locked repository.ItemRepository) error {
 		var err error
-		reply, next, err = executeLocked(ctx, locked, m, state, result)
+		reply, next, err = executeLocked(ctx, locked, m, state, result, embedder)
 		return err
 	})
+	if err == nil {
+		reply.UndoToken = token
+	}
 	return reply, next, err
 }
 
-func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult) (domain.Reply, domain.DialogueState, error) {
+func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain.Message, state domain.DialogueState, result domain.ModelResult, embedder Embedder) (domain.Reply, domain.DialogueState, error) {
 	var approvedConflicts []string
 	confirmed := false
 	progress := false
@@ -60,6 +67,9 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 		state.Draft = nil
 		state.Expects = nil
 		return domain.NewReply("info", "Хорошо, не добавляю.", map[string]any{"reason": "cancelled"}), state, nil
+	}
+	if len(result.Actions) == 1 && isMutation(result.Actions[0].Intent) {
+		return startMutation(ctx, repo, m, state, result.Actions[0])
 	}
 	if len(result.Actions) == 1 && result.Actions[0].Intent == "answer" {
 		if state.Draft == nil || !m.ModelRequest.Now.Before(state.Draft.ExpiresAt) {
@@ -197,16 +207,26 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 				t := m.ModelRequest.Now
 				f.From = &t
 			}
-			items, err := NewItems(repo).List(ctx, m.UserID, f)
+			semantic := false
+			var items []domain.Item
+			var err error
+			if action.Intent == "search" {
+				items, semantic, err = NewItems(repo, embedder).Search(ctx, m.UserID, f)
+			} else {
+				items, err = NewItems(repo).List(ctx, m.UserID, f)
+			}
 			if err != nil {
 				if errors.Is(err, ErrInvalid) {
 					return domain.ErrorReply("llm_bad_output", "Неверные параметры поиска или периода."), state, nil
 				}
 				return domain.Reply{}, state, err
 			}
-			total, err := repo.Count(ctx, m.UserID, f)
-			if err != nil {
-				return domain.Reply{}, state, err
+			total := len(items)
+			if action.Intent == "list" {
+				total, err = repo.Count(ctx, m.UserID, f)
+				if err != nil {
+					return domain.Reply{}, state, err
+				}
 			}
 			limit := 10
 			if action.Intent == "search" {
@@ -219,7 +239,7 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 			if total == 0 {
 				text = "Записей не найдено."
 			}
-			data := map[string]any{"kind": action.Intent, "from": f.From, "to": f.To, "types": f.Types, "total": total, "shown": len(items), "overdue": []domain.Item{}, "answer": nil, "query": p.Query, "semantic": false}
+			data := map[string]any{"kind": action.Intent, "from": f.From, "to": f.To, "types": f.Types, "total": total, "shown": len(items), "overdue": []domain.Item{}, "answer": nil, "query": p.Query, "semantic": semantic}
 			if p.YesNo {
 				data["answer"] = total > 0
 				if total > 0 {
@@ -228,12 +248,13 @@ func executeLocked(ctx context.Context, repo repository.ItemRepository, m domain
 					text = "Нет, записей нет."
 				}
 			}
-			if action.Intent == "search" {
-				text += " Искал только по точным словам."
+			if action.Intent == "search" && !semantic {
+				text += " Смысловой поиск временно недоступен, искал по словам."
 			}
 			reply := domain.NewReply("results", text, data)
 			reply.Items = items
 			state.Candidates = items
+			state.Focus = nil
 			if len(items) == 1 {
 				state.Focus = &items[0]
 			}
@@ -381,6 +402,9 @@ func describe(item domain.Item, timezone string) string {
 	loc, _ := time.LoadLocation(timezone)
 	label := map[domain.ItemType]string{domain.ItemTask: "задачу", domain.ItemReminder: "напоминание", domain.ItemMeeting: "встречу"}[item.Type]
 	text := "Добавил " + label + ": " + item.Title
+	if item.Type == domain.ItemMeeting && item.AllDay && item.StartAt != nil {
+		return text + ", на весь день " + item.StartAt.In(loc).Format("02.01.2006") + "."
+	}
 	for _, at := range []*time.Time{item.StartAt, item.RemindAt, item.DueAt} {
 		if at != nil {
 			return text + ", " + at.In(loc).Format("02.01.2006 15:04") + "."

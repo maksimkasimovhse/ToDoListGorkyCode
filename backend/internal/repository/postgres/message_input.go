@@ -39,7 +39,7 @@ func persistReply(ctx context.Context, tx *sql.Tx, m domain.Message, state domai
 	switch reply.Type {
 	case "error":
 		status = "failed"
-	case "clarify", "confirm":
+	case "clarify", "confirm", "choose":
 		if state.Draft == nil {
 			return m, errors.New("waiting response requires a draft")
 		}
@@ -77,8 +77,8 @@ func persistReply(ctx context.Context, tx *sql.Tx, m domain.Message, state domai
 
 func appendTurns(state *domain.DialogueState, text, reply string) {
 	state.History = append(state.History, domain.Turn{Role: "user", Text: text}, domain.Turn{Role: "assistant", Text: reply})
-	if len(state.History) > 10 {
-		state.History = state.History[len(state.History)-10:]
+	if len(state.History) > 5 {
+		state.History = state.History[len(state.History)-5:]
 	}
 }
 

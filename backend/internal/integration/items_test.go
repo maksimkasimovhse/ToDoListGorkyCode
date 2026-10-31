@@ -31,6 +31,7 @@ func TestManualItemChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+f.token)
 		resp, err := f.server.Client().Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -82,7 +83,7 @@ func TestManualItemChanges(t *testing.T) {
 	if err := svc.Delete(f.ctx, otherUser, item.ID); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("foreign delete: %v", err)
 	}
-	call("DELETE", path, "", 204)
+	call("DELETE", path, "", 200)
 	call("GET", path, "", 404)
 	call("PATCH", path, `{"title":"после удаления"}`, 404)
 	call("DELETE", path, "", 404)

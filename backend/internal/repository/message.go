@@ -20,6 +20,7 @@ type Executor func(context.Context, ItemRepository, domain.Message, domain.Dialo
 type Prepare func(context.Context, ItemRepository, *domain.DialogueState) (domain.ModelRequest, error)
 
 type MessageRepository interface {
+	Reset(context.Context, string, string) error
 	Submit(context.Context, string, domain.MessageRequest, time.Duration, Prepare) (domain.Message, error)
 	GetMessage(context.Context, string, string) (domain.Message, error)
 	Apply(context.Context, domain.ResultEnvelope, bool, Executor) error

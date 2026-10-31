@@ -18,6 +18,12 @@ func (s *Messages) Answer(ctx context.Context, user, id string, answer domain.Me
 	if _, err := uuid.Parse(answer.InputToken); err != nil {
 		return domain.Message{}, invalid("нужен корректный input_token из ответа сервера")
 	}
+	if answer.Text != nil && (strings.TrimSpace(*answer.Text) == "" || len(*answer.Text) > 256) {
+		return domain.Message{}, invalid("неверный текст выбора")
+	}
+	if answer.OptionID != nil && (strings.TrimSpace(*answer.OptionID) == "" || len(*answer.OptionID) > 128) {
+		return domain.Message{}, invalid("неверный option_id")
+	}
 	if answer.Date != nil {
 		if _, err := time.Parse(time.DateOnly, *answer.Date); err != nil {
 			return domain.Message{}, invalid("date должна быть в формате YYYY-MM-DD")
@@ -37,6 +43,23 @@ func (s *Messages) Answer(ctx context.Context, user, id string, answer domain.Me
 	return s.repo.Answer(ctx, user, id, answer, func(ctx context.Context, items repository.ItemRepository, m domain.Message, state domain.DialogueState) (domain.Reply, domain.DialogueState, error) {
 		if state.Draft == nil || state.Expects == nil {
 			return domain.Reply{}, state, repository.ErrMessageState
+		}
+		if state.Draft.Mutation != nil {
+			m.ModelRequest.Now = time.Now().In(m.ModelRequest.Now.Location())
+			var reply domain.Reply
+			var next domain.DialogueState
+			token, err := items.WithUndo(ctx, user, func(locked repository.ItemRepository) error {
+				var err error
+				reply, next, err = continueMutation(ctx, locked, m, state, answer)
+				return err
+			})
+			if err == nil {
+				reply.UndoToken = token
+			}
+			return reply, next, err
+		}
+		if answer.OptionID != nil || answer.Text != nil {
+			return domain.Reply{}, state, invalid("сейчас выбор записи не ожидается")
 		}
 		var value json.RawMessage
 		if m.Status == "awaiting_confirmation" {
@@ -90,7 +113,7 @@ func (s *Messages) Answer(ctx context.Context, user, id string, answer domain.Me
 		}
 		m.ModelRequest.Now = time.Now().In(m.ModelRequest.Now.Location())
 		payload, _ := json.Marshal(map[string]any{"value": value})
-		return execute(ctx, items, m, state, domain.ModelResult{Status: "ready", Actions: []domain.Action{{Intent: "answer", Params: payload}}})
+		return execute(ctx, items, m, state, domain.ModelResult{Status: "ready", Actions: []domain.Action{{Intent: "answer", Params: payload}}}, s.embedder)
 	})
 }
 

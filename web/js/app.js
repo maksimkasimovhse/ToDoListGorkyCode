@@ -1,11 +1,16 @@
 import * as api from './api.js';
 import { isCancel, parseAnswer, parseConfirmation } from './answer.js';
+import { clearSession, getSession } from './auth.js';
 import { createChat } from './chat.js';
+import { createItemForm } from './item-form.js';
+import { hasDate } from './items.js';
 import { CONFIG } from './config.js';
 import { el, uuid } from './dom.js';
+import { createLogin } from './login.js';
 import { createNotifier } from './notifications.js';
 import { createPlanner } from './planner.js';
 import { createRecent } from './recent.js';
+import { createReminders } from './reminders.js';
 import { createSettings, stripName } from './settings.js';
 import { configureClock, formatDayMonth, formatTime, now } from './time.js';
 import { createRecognizer, recognitionSupported, speech } from './voice.js';
@@ -65,8 +70,10 @@ const chat = createChat({
   handlers: {
     // Текст кнопки тоже отправляем: он попадает в историю и понятен серверу без choice
     // Подтверждение сценария бэкенда — через /answer; без flow (заглушка) — обычным сообщением
-    onOption: (option, flow) => (flow
-      ? runFlow(option.label, (f) => api.answerFlow(f, { confirmed: option.id === 'yes' }))
+    onOption: (option, flow) => (option.id.startsWith('reminder:')
+      ? reminderAction(option.id)
+      : flow
+      ? runFlow(option.label, (f) => api.answerFlow(f, f.reply.type === 'choose' ? { option_id: option.id } : { confirmed: option.id === 'yes' }))
       : send({ text: option.label, choice: { option_id: option.id } })),
     onFlowAnswer: (flow, fields) => runFlow(describeFields(fields), (f) => api.answerFlow(f, fields)),
     onFlowCancel: () => runFlow('Отмена', api.cancelFlow),
@@ -80,6 +87,7 @@ const planner = createPlanner({
   body: $('planner-body'),
   tabs: $('planner-tabs'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
   onToggleDone: markDone,
   onDelete: removeItem,
 });
@@ -90,6 +98,7 @@ const recent = createRecent({
   search: $('recent-search'),
   filters: $('recent-filters'),
   onSelect: toggleSelected,
+  onOpen: (item) => itemForm.edit(item),
 });
 
 const recognizer = createRecognizer({
@@ -199,6 +208,7 @@ function answerByText(text, inputMode) {
   const voice = inputMode === 'voice';
   const flow = state.flow;
   if (isCancel(text)) return runFlow(text, api.cancelFlow, { voice });
+  if (flow.reply.type === 'choose') return runFlow(text, (f) => api.answerFlow(f, { text }), { voice });
   if (flow.status === 'awaiting_confirmation') {
     const confirmed = parseConfirmation(text);
     if (confirmed === null) return toast('Ответьте «да» или «нет».');
@@ -271,7 +281,6 @@ const settings = createSettings({
   note: $('settings-note'),
   onChange: ({ name }) => {
     $('assistant-name').textContent = name;
-    document.title = `${name} — голосовой ассистент`;
   },
 });
 
@@ -337,15 +346,25 @@ function refreshLists(flash = []) {
   planner.refresh({ flash });
   recent.refresh();
   if (notifier) notifier.refresh();
+  if (CONFIG.MODE !== 'mock') reminders.sync();
+}
+
+/** Откат действия по токену бэкенда (POST /api/undo): запись возвращается такой же, с тем же id */
+async function undoByToken(token, flash = [], message = 'Отменил действие') {
+  await api.undo(token);
+  refreshLists(flash);
+  toast(message);
 }
 
 async function markDone(item) {
   try {
-    await api.patchItem(item.id, { status: 'done' });
+    const changed = await api.patchItem(item.id, { status: 'done' });
     refreshLists();
     toast(`Отмечено выполненным: ${item.title}`, {
       label: 'Вернуть',
-      run: () => api.patchItem(item.id, { status: 'open' }).then(() => refreshLists([item.id])),
+      run: () => (changed && changed.undo_token
+        ? undoByToken(changed.undo_token, [item.id], `Вернул в работу: ${item.title}`)
+        : api.patchItem(item.id, { status: 'open' }).then(() => refreshLists([item.id]))),
     });
   } catch (error) {
     console.warn(error);
@@ -353,18 +372,73 @@ async function markDone(item) {
   }
 }
 
-async function removeItem(item) {
+async function reopenItem(item) {
   try {
-    const result = await api.deleteItem(item.id);
-    if (state.selected && state.selected.id === item.id) setSelected(null);
-    refreshLists();
-    const token = result && result.undo_token;
-    toast(`Удалено: ${item.title}`, token ? { label: 'Отменить', run: () => api.undo(token).then(() => refreshLists([item.id])) } : null);
+    await api.patchItem(item.id, { status: 'open' });
+    refreshLists([item.id]);
+    toast(`Вернул в работу: ${item.title}`);
   } catch (error) {
     console.warn(error);
-    toast(error.code === 'not_implemented' ? 'Удаление пока не поддерживается бэкендом.' : 'Не получилось удалить. Попробуйте ещё раз.');
+    toast('Не получилось сохранить. Попробуйте ещё раз.');
   }
 }
+
+const DELETED = { task: 'Задача удалена', reminder: 'Напоминание удалено', meeting: 'Встреча удалена' };
+
+async function removeItem(item) {
+  try {
+    const deleted = await api.deleteItem(item.id);
+    if (state.selected && state.selected.id === item.id) setSelected(null);
+    refreshLists();
+    toast(`${DELETED[item.type]}: ${item.title}`, {
+      label: 'Вернуть',
+      run: () => (deleted && deleted.undo_token ? undoByToken(deleted.undo_token, [item.id], `Вернул: ${item.title}`) : restoreItem(item)),
+    });
+  } catch (error) {
+    console.warn(error);
+    refreshLists();
+    toast('Не получилось удалить. Попробуйте ещё раз.');
+  }
+}
+
+// Поля, по которым удалённая запись создаётся заново: бэкенд не умеет снимать отметку удаления
+const RESTORE_FIELDS = ['type', 'title', 'source_text', 'due_date', 'due_at', 'period_start', 'period_end', 'start_at', 'end_at', 'all_day', 'participants', 'location', 'remind_at'];
+
+/** «Вернуть» после удаления: та же запись с новым id; пересечения встреч уже были разрешены раньше */
+async function restoreItem(item) {
+  const fields = Object.fromEntries(RESTORE_FIELDS.map((key) => [key, item[key]]));
+  const restored = await api.createItem(fields, { allowConflicts: true });
+  if (item.status === 'done') await api.patchItem(restored.id, { status: 'done' });
+  refreshLists([restored.id]);
+  toast(`Вернул: ${item.title}`);
+}
+
+// ---------- Ручное добавление записи ----------
+
+const itemForm = createItemForm({
+  dialog: $('item-dialog'),
+  onUpdated: (item) => {
+    refreshLists([item.id]);
+    toast(`Сохранено: ${item.title}`, item.undo_token ? { label: 'Отменить', run: () => undoByToken(item.undo_token, [item.id], `Вернул прежнее: ${item.title}`) } : null);
+  },
+  onDelete: removeItem,
+  onDone: markDone,
+  onReopen: reopenItem,
+  onCreated: (item) => {
+    // Задача без срока видна только во «Ближайших» — показываем её там
+    if (hasDate(item)) refreshLists([item.id]);
+    else {
+      planner.showTab('upcoming', { flash: [item.id] });
+      recent.refresh();
+    }
+    toast(`Добавлено: ${item.title}`, {
+      label: 'Отменить',
+      run: () => (item.undo_token ? undoByToken(item.undo_token, [], `Отменил: ${item.title}`) : api.deleteItem(item.id).then(() => refreshLists())),
+    });
+  },
+});
+
+$('add-item').addEventListener('click', () => itemForm.open({ date: planner.selectedDay() }));
 
 async function undoAction(token, button) {
   button.disabled = true;
@@ -392,7 +466,8 @@ function toast(text, action = null) {
     node.append(button);
   }
   $('toasts').append(node);
-  setTimeout(() => node.remove(), 6000);
+  // С кнопкой «Вернуть» или «Отменить» тост живёт дольше, чтобы успеть нажать
+  setTimeout(() => node.remove(), action ? 8000 : 5000);
 }
 
 // ---------- Сессия и история ----------
@@ -417,8 +492,79 @@ $('new-dialog').addEventListener('click', async () => {
   chat.clear();
 });
 
-$('profile-btn').addEventListener('click', () => {
-  toast('Вход и регистрация появятся позже. Сейчас вы работаете как гость.');
+// ---------- Профиль и выход ----------
+
+const profileButton = $('profile-btn');
+const profileMenu = $('profile-menu');
+
+function setMenu(open) {
+  profileMenu.hidden = !open;
+  profileButton.setAttribute('aria-expanded', String(open));
+}
+
+profileButton.addEventListener('click', (event) => {
+  event.stopPropagation();
+  setMenu(profileMenu.hidden);
+});
+document.addEventListener('click', (event) => {
+  if (!profileMenu.hidden && !event.target.closest('.profile-wrap')) setMenu(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') setMenu(false);
+});
+
+$('logout-btn').addEventListener('click', async () => {
+  setMenu(false);
+  // Токен отзываем на сервере, но выходим и при ошибке: сессия в браузере всё равно сбрасывается
+  await api.logout().catch((error) => console.warn('Выход на сервере не прошёл', error));
+  endSession();
+});
+
+/** Вход нужен, когда отвечает настоящий бэкенд; заглушка без бэкенда обходится без него */
+const authRequired = CONFIG.MODE !== 'mock';
+
+/** Вернуть страницу в состояние «никто не вошёл»: чужие данные с экрана убираем */
+function endSession(message = '') {
+  clearSession();
+  reminders.stop();
+  speech.cancel();
+  state.flow = null;
+  state.sessionId = newSessionId();
+  state.busy = false;
+  setBusy(false);
+  setSelected(null);
+  chat.clear();
+  $('planner-body').replaceChildren();
+  $('recent-list').replaceChildren();
+  syncComposer();
+  showLogin(message);
+}
+
+const login = createLogin({
+  root: $('login'),
+  onLoggedIn: () => {
+    document.body.classList.remove('is-auth');
+    $('login').hidden = true;
+    startSession();
+  },
+});
+
+function showLogin(message = '') {
+  document.body.classList.remove('is-booting');
+  document.body.classList.add('is-auth');
+  $('login').hidden = false;
+  login.show(message);
+}
+
+// Токен истёк или отозван: любой запрос получил 401 unauthorized
+let unauthorizedShown = false;
+api.apiEvents.addEventListener('unauthorized', () => {
+  if (!authRequired || unauthorizedShown || document.body.classList.contains('is-auth')) return;
+  unauthorizedShown = true;
+  endSession('Сессия закончилась. Войдите снова.');
+  setTimeout(() => {
+    unauthorizedShown = false;
+  }, 500);
 });
 
 async function loadHistory() {
@@ -459,9 +605,19 @@ async function loadHistory() {
 
 // ---------- Напоминания (2.5) ----------
 
+const REMIND_LATER_MIN = 15;
+
+/** Напоминание наступило при открытой странице (или пришло событие заглушки) */
 function onReminder({ item, reply }) {
   const text = reply || `Напоминаю: ${item.title}.`;
-  chat.addAssistant({ ...localReply('info', text, { reason: 'reminder' }, [item]), suggestions: ['Сделано', 'Напомни через 15 минут'] });
+  chat.addAssistant({
+    ...localReply('info', text, { reason: 'reminder' }, [item]),
+    // Кнопки обрабатывает фронт: «Сделано» и «Отложить» меняют саму запись, а не отправляют фразу ассистенту
+    options: [
+      { id: `reminder:done:${item.id}`, label: 'Сделано' },
+      { id: `reminder:later:${item.id}`, label: `Через ${REMIND_LATER_MIN} минут` },
+    ],
+  });
   beep();
   say(text);
 }
@@ -470,7 +626,8 @@ function onReminder({ item, reply }) {
 // реплика в чате, звук и озвучка. Если системное уведомление не показано, сообщаем на странице.
 function onDue(item, kind, text, shown) {
   if (item.type === 'reminder' && kind === 'now') {
-    onReminder({ item });
+    // С бэкендом реплику, звук и озвучку в момент напоминания даёт reminders.js — здесь только системное уведомление
+    if (CONFIG.MODE === 'mock') onReminder({ item });
     return;
   }
   beep();
@@ -485,20 +642,35 @@ function offerNotifications() {
   });
 }
 
-async function showMissedReminders() {
-  const since = store.get('last_seen');
-  if (!since) return;
+/** Напоминания, сработавшие, пока страницы не было */
+function onMissedReminders(items) {
+  const shown = items.slice(0, 5).map((item) => `«${item.title}» в ${formatTime(item.remind_at)}`).join(', ');
+  const rest = items.length > 5 ? ` и ещё ${items.length - 5}` : '';
+  const noun = items.length === 1 ? 'напоминание' : 'напоминания';
+  chat.addAssistant(localReply('info', `Пока вас не было: ${noun} ${shown}${rest}.`, { reason: 'missed' }, items.slice(0, 5)));
+  say('Пока вас не было сработали напоминания.');
+}
+
+async function reminderAction(optionId) {
+  const [, action, id] = optionId.split(':');
   try {
-    const result = await api.getMissedReminders(since);
-    const items = Array.isArray(result) ? result : (result && result.items) || [];
-    if (!items.length) return;
-    const list = items.map((item) => `«${item.title}» в ${formatTime(item.remind_at)}`).join(', ');
-    const noun = items.length === 1 ? 'напоминание' : 'напоминания';
-    chat.addAssistant(localReply('info', `Пока вас не было: ${noun} ${list}.`, { reason: 'missed' }, items));
+    const item = await api.getItem(id);
+    if (action === 'done') return markDone(item);
+    const later = new Date(now().getTime() + REMIND_LATER_MIN * 60000).toISOString();
+    await api.patchItem(id, { remind_at: later });
+    refreshLists([id]);
+    toast(`Напомню через ${REMIND_LATER_MIN} минут: ${item.title}`);
   } catch (error) {
     console.warn(error);
+    toast('Не получилось. Попробуйте ещё раз.');
   }
 }
+
+const reminders = createReminders({
+  lastSeen: () => store.get('last_seen'),
+  onFire: (item) => onReminder({ item }),
+  onMissed: onMissedReminders,
+});
 
 function rememberVisit() {
   store.set('last_seen', now().toISOString());
@@ -556,35 +728,55 @@ function renderSource() {
 
 // ---------- Старт ----------
 
-async function init() {
-  syncSpeakToggle();
-  setListening(false);
+let wired = false;
+
+/** Данные пользователя: профиль, история чата, списки. Вызывается при запуске и после каждого входа */
+async function startSession() {
+  document.body.classList.remove('is-booting');
+  setBusy(false);
   source.backendAlive = await api.checkHealth();
   renderSource();
   try {
     const me = await api.getMe();
     configureClock(me);
-    $('profile-btn').title = me.login || 'Гость';
+    const name = me.login || (getSession() && getSession().user && getSession().user.login) || null;
+    profileButton.title = name || 'Профиль';
+    $('profile-name').textContent = name ? `Вы вошли как ${name}` : 'Гость';
+    $('logout-btn').hidden = !authRequired;
   } catch (error) {
     console.warn('Профиль не загрузился', error);
   }
   await loadHistory();
-  notifier = createNotifier({
-    loadItems: ({ from, to }) => api.getItems({ from, to, types: 'meeting,reminder' }),
-    onDue,
-    toggle: $('notify-toggle'),
-    note: $('notify-note'),
-  });
-  // Разрешение могли поменять в настройках браузера, пока страница была открыта
-  $('settings-btn').addEventListener('click', () => notifier.render());
+  // Уведомления браузера создаются один раз: startSession повторяется после повторного входа
+  if (!notifier) {
+    notifier = createNotifier({
+      loadItems: ({ from, to }) => api.getItems({ from, to, types: 'meeting,reminder' }),
+      onDue,
+      toggle: $('notify-toggle'),
+      note: $('notify-note'),
+    });
+    // Разрешение могли поменять в настройках браузера, пока страница была открыта
+    $('settings-btn').addEventListener('click', () => notifier.render());
+  }
+  // Напоминания — раньше списков: refreshLists тоже запускает их проверку и забрала бы «пропущенные» как обычные
+  if (CONFIG.MODE !== 'mock') await reminders.start();
   refreshLists();
   offerNotifications();
-  await showMissedReminders();
   rememberVisit();
+
+  if (wired) return;
+  wired = true;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') rememberVisit();
   });
   api.subscribe({ reminder: onReminder, items_changed: () => refreshLists() });
+}
+
+function init() {
+  syncSpeakToggle();
+  setListening(false);
+  if (authRequired && !getSession()) showLogin();
+  else startSession();
 }
 
 init();

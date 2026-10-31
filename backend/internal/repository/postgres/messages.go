@@ -12,9 +12,14 @@ import (
 	"gorky/backend/internal/repository"
 )
 
-type Messages struct{ db *sql.DB }
+type Messages struct {
+	db       *sql.DB
+	sessions repository.SessionRepository
+}
 
-func NewMessages(db *sql.DB) *Messages { return &Messages{db: db} }
+func NewMessages(db *sql.DB, sessions repository.SessionRepository) *Messages {
+	return &Messages{db: db, sessions: sessions}
+}
 
 const messageColumns = `id,status,response,created_at,deadline_at,user_id,request,model_request,attempt_id,attempts,input_token`
 
@@ -86,6 +91,9 @@ func (r *Messages) Submit(ctx context.Context, user string, req domain.MessageRe
 	if err != nil {
 		return m, err
 	}
+	if err = r.bindMessageSession(ctx, tx, m); err != nil {
+		return m, err
+	}
 	if err = enqueue(ctx, tx, m); err != nil {
 		return m, err
 	}
@@ -153,8 +161,15 @@ func (r *Messages) Apply(ctx context.Context, result domain.ResultEnvelope, retr
 	if m.Status != "processing" || m.AttemptID != result.AttemptID {
 		return nil
 	}
+	sessionErr := r.checkMessageSession(ctx, tx, m.ID, m.UserID)
+	if sessionErr != nil && !errors.Is(sessionErr, repository.ErrUnauthenticated) {
+		return sessionErr
+	}
+	executed := false
 	var reply domain.Reply
-	if !time.Now().Before(m.DeadlineAt) {
+	if errors.Is(sessionErr, repository.ErrUnauthenticated) {
+		reply = domain.ErrorReply("session_expired", "Сессия истекла или завершена. Войдите снова и повторите запрос.")
+	} else if !time.Now().Before(m.DeadlineAt) {
 		reply = domain.ErrorReply("llm_unavailable", "Не получилось обработать запрос вовремя. Попробуйте ещё раз.")
 	} else if retry && m.Attempts < 2 {
 		m.AttemptID = uuid.NewString()
@@ -167,14 +182,34 @@ func (r *Messages) Apply(ctx context.Context, result domain.ResultEnvelope, retr
 		}
 		return tx.Commit()
 	} else {
+		if _, err = tx.ExecContext(ctx, "SAVEPOINT execute_message"); err != nil {
+			return err
+		}
+		executed = true
 		reply, state, err = execute(ctx, &Items{db: tx}, m, state)
 		if err != nil {
 			return err
 		}
 	}
+	// Повторная проверка перед фиксацией: ожидание блокировки могло пережить TTL сессии.
+	if err := r.checkMessageSession(ctx, tx, m.ID, m.UserID); errors.Is(err, repository.ErrUnauthenticated) {
+		if executed {
+			if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT execute_message"); err != nil {
+				return err
+			}
+			state, err = lockConversation(ctx, tx, m.UserID, m.Request.SessionID)
+			if err != nil {
+				return err
+			}
+		}
+		reply = domain.ErrorReply("session_expired", "Сессия истекла или завершена. Войдите снова и повторите запрос.")
+	} else if err != nil {
+		return err
+	}
+
 	state.History = append(state.History, domain.Turn{Role: "user", Text: m.ModelRequest.Text}, domain.Turn{Role: "assistant", Text: reply.Reply})
-	if len(state.History) > 10 {
-		state.History = state.History[len(state.History)-10:]
+	if len(state.History) > 5 {
+		state.History = state.History[len(state.History)-5:]
 	}
 	_, err = persistReply(ctx, tx, m, state, reply, "")
 	if err != nil {
@@ -243,7 +278,9 @@ func (r *Messages) Expire(ctx context.Context) error {
 }
 
 func (r *Messages) History(ctx context.Context, user, session string) ([]domain.Message, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+messageColumns+` FROM (SELECT * FROM messages WHERE user_id=$1 AND session_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100) m ORDER BY created_at,id`, user, session)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+messageColumns+` FROM (SELECT * FROM messages WHERE user_id=$1 AND session_id=$2
+ AND created_at > COALESCE((SELECT reset_at FROM conversation_resets WHERE user_id=$1 AND session_id=$2),'-infinity'::timestamptz)
+ ORDER BY created_at DESC,id DESC LIMIT 100) m ORDER BY created_at,id`, user, session)
 	if err != nil {
 		return nil, err
 	}
