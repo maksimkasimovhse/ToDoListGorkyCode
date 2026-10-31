@@ -1,3 +1,6 @@
 51-250-90-230.sslip.io {
+	# После обновления браузер проверяет актуальность файлов интерфейса.
+	@frontend path / /index.html /js/* /css/*
+	header @frontend Cache-Control "no-cache"
 	reverse_proxy backend:8080
 }

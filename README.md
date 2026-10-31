@@ -61,9 +61,6 @@ docker compose logs -f backend
 ## Если не работает
 
 - **Чат отвечает ошибкой.** Проверьте `GIGACHAT_AUTH_KEY` и `docker compose logs ml-worker`.
-- **Ошибка 500 на любое сообщение или запись, в логах бэкенда ошибки SQL.** В вашей базе осталась
-  схема от прежней версии: миграции менялись. Пересоздайте базу (данные будут удалены):
-  `docker compose down -v`, затем снова `docker compose up -d --build --wait`.
 - **Ошибка `declared as external, but could not be found` при запуске ml-stub.** Приложение не
   запущено или проект Compose назван иначе. Сначала `docker compose up -d --build --wait` в корне.
 - **Сборка падает на `go mod download` или `apk add` с таймаутом DNS.** Контейнеры сборки не видят
@@ -77,7 +74,7 @@ docker compose logs -f backend
         network: host
   ```
 
-- **Страница просит войти снова.** Срок сессии 7 дней, а также токены сбрасываются при очистке Redis (`docker compose down -v`). Войдите заново.
+- **Страница просит войти снова.** Войдите заново. Техническая диагностика авторизации — в [README бэкенда](backend/README.md#диагностика).
 - **Заглушка ML не запускается или зависла** (`docker ps` не показывает `ml-stub-ml-stub-1` или в логах нет `ml-stub started`). Она ставит npm-пакеты при старте; при сбое сети пересоздайте: `cd ml-stub && docker compose up -d --force-recreate`.
 - **Порт занят** (8080, 55432, 6379): измените `APP_PORT`, `POSTGRES_PORT`, `REDIS_PORT` в `.env`.
 - **Микрофон.** Голосовой ввод работает в Chrome, Edge и Safari по адресу `localhost` (или по https).
@@ -85,34 +82,7 @@ docker compose logs -f backend
 - **Изменили файлы в web/, а страница старая.** Файлы попадают в образ при сборке:
   `docker compose up -d --build backend`, затем Ctrl+Shift+R в браузере.
 
-## Запуск Go без сборки контейнера
+## Документация
 
-Из корня:
-
-```powershell
-docker compose up -d --wait postgres redis
-cd backend
-$env:DATABASE_URL = 'postgres://gorky:gorky@localhost:55432/gorky?sslmode=disable'
-$env:REDIS_URL = 'redis://localhost:6379/0'
-go run ./cmd/api
-```
-
-Страница и API также доступны на localhost:8080. WEB_DIR по умолчанию ../web относительно
-рабочей директории процесса; в контейнере указан /app/web. Прямой запуск Go не читает .env.
-Не запускайте контейнер приложения и локальный Go одновременно на одном порту.
-
-`docker compose down` останавливает приложение и сохраняет данные. Сохранено имя
-Compose-проекта backend для совместимости с прежними volumes PostgreSQL и Redis.
-Пароль в примере предназначен для локальной разработки; изменение .env не меняет пароль
-уже созданной БД. Для публичного доступа и микрофона нужен HTTPS.
-
-Подробности API и миграций — [backend/README.md](backend/README.md).
-Фронтенд — [web/README.md](web/README.md).
-
-## Вход пользователей
-
-Бэкенд предоставляет POST /api/auth/login: demo1 / DemoPass1! или demo2 / DemoPass2!.
-Каждый аккаунт видит свои записи и диалоги. Сессия действует 7 дней (SESSION_TTL=168h).
-Подробности API и хранения сессий — [контракт авторизации](backend/docs/auth.md).
-
-Форму входа и обработку 401 подключает фронтендер по контракту. Изменения авторизации во фронте отменены.
+Архитектура Go-бэкенда, работа с БД и Redis, конфигурация, отдельный запуск и тесты описаны в [backend/README.md](backend/README.md).
+Документация интерфейса — [web/README.md](web/README.md).
